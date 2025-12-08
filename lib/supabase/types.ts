@@ -1,0 +1,96 @@
+// TypeScript types for database tables
+
+export interface Product {
+    id: string
+    variant_id: number
+    shopify_product_id: number
+    title: string
+    handle: string
+    sku: string | null
+    price: number
+    compare_at_price: number | null
+    inventory_quantity: number
+    weight: number | null
+    image_url: string | null
+    landing_page_url: string | null
+    internal_meta: InternalMeta
+    created_at: string
+    updated_at: string
+}
+
+export interface InternalMeta {
+    cost_price?: number
+    supplier_name?: string
+    supplier?: string // Alternative field for supplier
+    profit_margin?: number
+    notes?: string
+    manual_inventory?: number // For manual inventory override
+    [key: string]: any // Allow custom fields
+}
+
+export interface ListingDraft {
+    id: string
+    product_id: string | null
+    original_data: any
+    draft_data: any
+    status: 'draft' | 'ready'
+    created_at: string
+    updated_at: string
+}
+
+export interface UserEvent {
+    id: string
+    session_id: string
+    product_variant_id: number
+    event_type: 'view' | 'cart' | 'purchase'
+    event_data: any
+    created_at: string
+}
+
+export interface ProductRecommendation {
+    variant_id: number
+    view_count: number
+    product_title: string | null
+    product_image_url: string | null
+    product_price: number | null
+}
+
+// Supabase Database type
+export interface Database {
+    public: {
+        Tables: {
+            products: {
+                Row: Product
+                Insert: Omit<Product, 'id' | 'created_at' | 'updated_at'>
+                Update: Partial<Omit<Product, 'id' | 'created_at' | 'updated_at'>>
+            }
+            listing_drafts: {
+                Row: ListingDraft
+                Insert: Omit<ListingDraft, 'id' | 'created_at' | 'updated_at'>
+                Update: Partial<Omit<ListingDraft, 'id' | 'created_at' | 'updated_at'>>
+            }
+            user_events: {
+                Row: UserEvent
+                Insert: Omit<UserEvent, 'id' | 'created_at'>
+                Update: Partial<Omit<UserEvent, 'id' | 'created_at'>>
+            }
+        }
+        Functions: {
+            get_product_recommendations: {
+                Args: {
+                    target_variant_id: number
+                    limit_count?: number
+                }
+                Returns: ProductRecommendation[]
+            }
+        }
+    }
+}
+
+// Enhanced Product type with calculated fields for UI
+export interface ProductWithCalculations extends Product {
+    gross_profit?: number
+    live_price?: number
+    live_inventory?: number
+    has_changes?: boolean
+}
