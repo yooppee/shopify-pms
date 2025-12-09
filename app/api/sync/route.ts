@@ -211,6 +211,41 @@ export async function POST(request: NextRequest) {
         }
 
         console.log(`✅ Successfully synced ${syncedCount} products`)
+
+        // Delete products that exist in DB but not in Shopify
+        const shopifyVariantIds = transformedProducts.map(p => p.variant_id)
+        console.log('🔍 Checking for products to delete...')
+
+        // Get all variant IDs from database
+        const { data: allDbProducts, error: fetchError } = await supabase
+            .from('products')
+            .select('variant_id')
+
+        if (fetchError) {
+            console.error('❌ Error fetching DB products for deletion check:', fetchError)
+        } else {
+            const dbVariantIds = allDbProducts?.map(p => p.variant_id) || []
+            const variantsToDelete = dbVariantIds.filter(id => !shopifyVariantIds.includes(id))
+
+            if (variantsToDelete.length > 0) {
+                console.log(`🗑️ Found ${variantsToDelete.length} products to delete (exist in DB but not in Shopify)`)
+                console.log('   Variant IDs to delete:', variantsToDelete)
+
+                const { error: deleteError } = await supabase
+                    .from('products')
+                    .delete()
+                    .in('variant_id', variantsToDelete)
+
+                if (deleteError) {
+                    console.error('❌ Error deleting products:', deleteError)
+                } else {
+                    console.log(`✅ Successfully deleted ${variantsToDelete.length} products`)
+                }
+            } else {
+                console.log('✅ No products to delete - DB is in sync with Shopify')
+            }
+        }
+
         return NextResponse.json({
             success: true,
             synced: syncedCount,

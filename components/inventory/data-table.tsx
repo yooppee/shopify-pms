@@ -32,6 +32,8 @@ import { DiffCell } from './sync-indicator'
 interface ProductNode extends Partial<ProductWithCalculations> {
     id: string // Unique ID for table (SPU ID or Variant ID)
     is_spu: boolean
+    is_deleted?: boolean // Mark if product/variant is deleted in Shopify
+    has_changes?: boolean // Mark if product has sync changes
     subRows?: ProductNode[]
 
     // SPU 聚合数据
@@ -333,7 +335,9 @@ export function InventoryDataTable({
             // Process existing products with diffs
             const processedNodes = Array.from(grouped.entries()).map(([spuId, variants]) => {
                 const firstVariant = variants[0]
-                const baseTitle = firstVariant.title.split(' - ')[0]
+                // Extract base title by removing the last part (variant name) after the last ' - '
+                const titleParts = firstVariant.title.split(' - ')
+                const baseTitle = titleParts.length > 1 ? titleParts.slice(0, -1).join(' - ') : titleParts[0]
 
                 // 计算价格范围
                 const prices = variants.map(v => v.price)
@@ -373,13 +377,17 @@ export function InventoryDataTable({
                         ? Number(syncVariant.compare_at_price)
                         : null
 
+                    // Check for title and image changes
+                    const titleDiff = syncVariant && v.title !== syncVariant.title
+                    const imageDiff = syncVariant && v.image_url !== syncVariant.image_url
+
                     // Debug: Log type info for first few comparisons
                     if (syncVariant) {
                         const priceDiff = syncPrice !== dbPrice
                         const invDiff = syncInventory !== dbInventory
                         const compareDiff = syncCompareAt !== dbCompareAt
 
-                        if (priceDiff || invDiff || compareDiff) {
+                        if (priceDiff || invDiff || compareDiff || titleDiff || imageDiff) {
                             console.log(`🔍 Diff detected for variant ${v.variant_id}:`, {
                                 title: v.title,
                                 price: {
@@ -400,6 +408,16 @@ export function InventoryDataTable({
                                     shopifyType: typeof syncVariant.compare_at_price,
                                     dbType: typeof v.compare_at_price,
                                     diff: compareDiff
+                                },
+                                title_change: {
+                                    shopify: syncVariant.title,
+                                    db: v.title,
+                                    diff: titleDiff
+                                },
+                                image_change: {
+                                    shopify: syncVariant.image_url,
+                                    db: v.image_url,
+                                    diff: imageDiff
                                 }
                             })
                         }
@@ -408,7 +426,9 @@ export function InventoryDataTable({
                     const isDiff = syncVariant && (
                         syncPrice !== dbPrice ||
                         syncInventory !== dbInventory ||
-                        syncCompareAt !== dbCompareAt
+                        syncCompareAt !== dbCompareAt ||
+                        titleDiff ||
+                        imageDiff
                     )
                     if (isDiff) hasDiffs = true
 
@@ -471,7 +491,9 @@ export function InventoryDataTable({
             // Create nodes for new products
             Array.from(newProductsGrouped.entries()).forEach(([spuId, variants]) => {
                 const firstVariant = variants[0]
-                const baseTitle = firstVariant.title.split(' - ')[0]
+                // Extract base title by removing the last part (variant name) after the last ' - '
+                const titleParts = firstVariant.title.split(' - ')
+                const baseTitle = titleParts.length > 1 ? titleParts.slice(0, -1).join(' - ') : titleParts[0]
 
                 const prices = variants.map(v => v.price)
                 const minPrice = Math.min(...prices)
@@ -520,6 +542,91 @@ export function InventoryDataTable({
                 newRows.push(node)
             })
 
+            // Process deleted products (in DB but not in Shopify)
+            const deletedProductsGrouped = new Map<number, ProductWithCalculations[]>()
+            const deletedVariantsList: number[] = []
+            const syncVariantIds = new Set(pendingSyncData.map(p => p.variant_id))
+
+            localProducts.forEach(dbProduct => {
+                if (!syncVariantIds.has(dbProduct.variant_id)) {
+                    deletedVariantsList.push(dbProduct.variant_id)
+                    const spuId = dbProduct.shopify_product_id
+                    if (!deletedProductsGrouped.has(spuId)) {
+                        deletedProductsGrouped.set(spuId, [])
+                    }
+                    deletedProductsGrouped.get(spuId)!.push(dbProduct)
+                }
+            })
+
+            // Debug: Log which variants are considered "deleted"
+            if (deletedVariantsList.length > 0) {
+                console.log(`🗑️ DELETED products (in DB but NOT in Shopify): ${deletedVariantsList.length} variants`)
+                console.log('   Variant IDs:', deletedVariantsList)
+            }
+
+            // Create nodes for deleted products
+            const deletedRows: ProductNode[] = []
+            Array.from(deletedProductsGrouped.entries()).forEach(([spuId, variants]) => {
+                const firstVariant = variants[0]
+                // Extract base title by removing the last part (variant name) after the last ' - '
+                const titleParts = firstVariant.title.split(' - ')
+                const baseTitle = titleParts.length > 1 ? titleParts.slice(0, -1).join(' - ') : titleParts[0]
+
+                const prices = variants.map(v => v.price)
+                const minPrice = Math.min(...prices)
+                const maxPrice = Math.max(...prices)
+                const priceRange = minPrice === maxPrice
+                    ? formatCurrency(minPrice)
+                    : `${formatCurrency(minPrice)} - ${formatCurrency(maxPrice)}`
+
+                const comparePrices = variants
+                    .map(v => v.compare_at_price)
+                    .filter((p): p is number => p !== null)
+
+                let compareRange = '-'
+                if (comparePrices.length > 0) {
+                    const minCompare = Math.min(...comparePrices)
+                    const maxCompare = Math.max(...comparePrices)
+                    compareRange = minCompare === maxCompare
+                        ? formatCurrency(minCompare)
+                        : `${formatCurrency(minCompare)} - ${formatCurrency(maxCompare)}`
+                }
+
+                const subRows: ProductNode[] = variants.map(v => ({
+                    ...v,
+                    id: `variant-${v.variant_id}`,
+                    is_spu: false,
+                    is_deleted: true, // Mark as deleted
+                    original_product: v,
+                    sync_product: undefined, // No sync product for deleted items
+                }))
+
+                const node: ProductNode = {
+                    id: `spu-${spuId}`,
+                    is_spu: true,
+                    is_deleted: true, // Mark SPU as deleted if all variants are deleted
+                    shopify_product_id: spuId,
+                    title: baseTitle,
+                    handle: firstVariant.handle,
+                    image_url: firstVariant.image_url,
+                    variant_count: variants.length,
+                    total_inventory: variants.reduce((sum, v) => sum + (v.internal_meta?.manual_inventory ?? v.inventory_quantity), 0),
+                    price_range: priceRange,
+                    compare_at_price_range: compareRange,
+                    total_cost: variants.reduce((sum, v) => sum + (v.internal_meta?.cost_price || 0), 0),
+                    total_profit: variants.reduce((sum, v) => {
+                        const profit = calculateGrossProfit(
+                            v.price,
+                            v.internal_meta?.cost_price
+                        )
+                        return sum + (profit || 0)
+                    }, 0),
+                    subRows,
+                    has_changes: true, // Deleted products are always marked as changed
+                }
+                deletedRows.push(node)
+            })
+
             // Sort into diff/normal/new
             processedNodes.forEach(node => {
                 if (node.has_changes) {
@@ -530,19 +637,22 @@ export function InventoryDataTable({
             })
 
             console.log('📊 Sync preview results:', {
+                deletedRows: deletedRows.length,
                 newRows: newRows.length,
                 diffRows: diffRows.length,
                 normalRows: normalRows.length,
-                total: newRows.length + diffRows.length + normalRows.length
+                total: deletedRows.length + newRows.length + diffRows.length + normalRows.length
             })
-            console.log('📊 Details - New rows:', newRows.length, ', Diff rows:', diffRows.length, ', Normal rows:', normalRows.length)
+            console.log('📊 Details - Deleted rows:', deletedRows.length, ', New rows:', newRows.length, ', Diff rows:', diffRows.length, ', Normal rows:', normalRows.length)
 
-            return [...newRows, ...diffRows, ...normalRows]
+            return [...deletedRows, ...newRows, ...diffRows, ...normalRows]
         }
 
         return Array.from(grouped.entries()).map(([spuId, variants]) => {
             const firstVariant = variants[0]
-            const baseTitle = firstVariant.title.split(' - ')[0]
+            // Extract base title by removing the last part (variant name) after the last ' - '
+            const titleParts = firstVariant.title.split(' - ')
+            const baseTitle = titleParts.length > 1 ? titleParts.slice(0, -1).join(' - ') : titleParts[0]
 
             // 计算价格范围
             const prices = variants.map(v => v.price)
@@ -679,6 +789,11 @@ export function InventoryDataTable({
                     setMousePos({ x: e.clientX, y: e.clientY })
                 }
 
+                // Check for image changes
+                const syncProduct = row.original.sync_product
+                const hasImageChange = syncProduct && row.original.image_url !== syncProduct.image_url
+                const displayImageUrl = hasImageChange ? syncProduct.image_url : row.original.image_url
+
                 return (
                     <div
                         className="w-10 h-10 relative"
@@ -686,13 +801,13 @@ export function InventoryDataTable({
                         onMouseLeave={() => setShowPreview(false)}
                         onMouseMove={handleMouseMove}
                     >
-                        {row.original.image_url ? (
+                        {displayImageUrl ? (
                             <>
                                 <Image
-                                    src={row.original.image_url}
+                                    src={displayImageUrl}
                                     alt={row.original.title || ''}
                                     fill
-                                    className="object-cover rounded cursor-pointer"
+                                    className={`object-cover rounded cursor-pointer ${hasImageChange ? 'ring-2 ring-green-600' : ''}`}
                                     sizes="40px"
                                 />
                                 {showPreview && (
@@ -703,15 +818,44 @@ export function InventoryDataTable({
                                             top: mousePos.y + 15
                                         }}
                                     >
-                                        <div className="w-48 h-48 relative bg-background border rounded-lg shadow-xl overflow-hidden">
-                                            <Image
-                                                src={row.original.image_url}
-                                                alt={row.original.title || ''}
-                                                fill
-                                                className="object-contain"
-                                                sizes="192px"
-                                            />
-                                        </div>
+                                        {hasImageChange ? (
+                                            <div className="flex gap-2">
+                                                <div className="flex flex-col gap-1">
+                                                    <span className="text-xs text-green-600 font-bold">New</span>
+                                                    <div className="w-48 h-48 relative bg-background border-2 border-green-600 rounded-lg shadow-xl overflow-hidden">
+                                                        <Image
+                                                            src={syncProduct.image_url!}
+                                                            alt={row.original.title || ''}
+                                                            fill
+                                                            className="object-contain"
+                                                            sizes="192px"
+                                                        />
+                                                    </div>
+                                                </div>
+                                                <div className="flex flex-col gap-1">
+                                                    <span className="text-xs text-muted-foreground line-through">Old</span>
+                                                    <div className="w-48 h-48 relative bg-background border rounded-lg shadow-xl overflow-hidden opacity-60">
+                                                        <Image
+                                                            src={row.original.image_url!}
+                                                            alt={row.original.title || ''}
+                                                            fill
+                                                            className="object-contain"
+                                                            sizes="192px"
+                                                        />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="w-48 h-48 relative bg-background border rounded-lg shadow-xl overflow-hidden">
+                                                <Image
+                                                    src={displayImageUrl}
+                                                    alt={row.original.title || ''}
+                                                    fill
+                                                    className="object-contain"
+                                                    sizes="192px"
+                                                />
+                                            </div>
+                                        )}
                                     </div>
                                 )}
                             </>
@@ -741,45 +885,141 @@ export function InventoryDataTable({
                 const landingUrl = getLandingUrl()
 
                 if (row.original.is_spu) {
+                    // Check if any subRow has title changes
+                    const hasTitleChanges = row.original.has_changes && row.original.subRows?.some(v => {
+                        const syncV = v.sync_product
+                        return syncV && v.title !== syncV.title
+                    })
+
+                    if (hasTitleChanges && row.original.subRows) {
+                        // Get the new base title from sync data
+                        const firstSyncVariant = row.original.subRows[0]?.sync_product
+                        if (firstSyncVariant) {
+                            const syncTitleParts = firstSyncVariant.title.split(' - ')
+                            const newBaseTitle = syncTitleParts.length > 1 ? syncTitleParts.slice(0, -1).join(' - ') : syncTitleParts[0]
+
+                            return (
+                                <div className="font-medium flex flex-col">
+                                    <span className="text-green-600 font-bold text-sm">
+                                        {landingUrl ? (
+                                            <a
+                                                href={landingUrl}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="hover:text-green-700 hover:underline transition-colors"
+                                                onClick={(e) => e.stopPropagation()}
+                                            >
+                                                {newBaseTitle}
+                                            </a>
+                                        ) : (
+                                            newBaseTitle
+                                        )}
+                                    </span>
+                                    <span className="line-through text-muted-foreground opacity-60 text-xs">
+                                        {row.original.title}
+                                    </span>
+                                    {row.original.variant_count && row.original.variant_count > 1 && (
+                                        <span className="text-xs text-muted-foreground font-normal">
+                                            ({row.original.variant_count} variants)
+                                        </span>
+                                    )}
+                                </div>
+                            )
+                        }
+                    }
+
                     return (
-                        <div className="font-medium">
-                            {landingUrl ? (
-                                <a
-                                    href={landingUrl}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="hover:text-primary hover:underline transition-colors"
-                                    onClick={(e) => e.stopPropagation()}
-                                >
-                                    {row.original.title}
-                                </a>
-                            ) : (
-                                row.original.title
-                            )}
-                            {row.original.variant_count && row.original.variant_count > 1 && (
-                                <span className="ml-2 text-xs text-muted-foreground font-normal">
-                                    ({row.original.variant_count} variants)
+                        <div className="font-medium flex items-center gap-2">
+                            <div className="flex-1">
+                                {landingUrl ? (
+                                    <a
+                                        href={landingUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className={`hover:text-primary hover:underline transition-colors ${row.original.is_deleted ? 'line-through text-muted-foreground' : ''}`}
+                                        onClick={(e) => e.stopPropagation()}
+                                    >
+                                        {row.original.title}
+                                    </a>
+                                ) : (
+                                    <span className={row.original.is_deleted ? 'line-through text-muted-foreground' : ''}>
+                                        {row.original.title}
+                                    </span>
+                                )}
+                                {row.original.variant_count && row.original.variant_count > 1 && (
+                                    <span className="ml-2 text-xs text-muted-foreground font-normal">
+                                        ({row.original.variant_count} variants)
+                                    </span>
+                                )}
+                            </div>
+                            {row.original.is_deleted && (
+                                <span className="px-2 py-0.5 text-xs font-bold bg-red-100 text-red-700 rounded">
+                                    DELETED
                                 </span>
                             )}
                         </div>
                     )
                 }
-                // Variant row
-                const title = row.original.title?.split(' - ')[1] || 'Default'
-                return (
-                    <div className="text-sm text-muted-foreground">
-                        {landingUrl ? (
-                            <a
-                                href={landingUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="hover:text-primary hover:underline transition-colors"
-                                onClick={(e) => e.stopPropagation()}
-                            >
+
+                // Variant row - extract the last part after the last ' - '
+                const titleParts = row.original.title?.split(' - ') || []
+                const title = titleParts.length > 1 ? titleParts[titleParts.length - 1] : 'Default'
+
+                // Check for title changes
+                const syncProduct = row.original.sync_product
+                const hasTitleChange = syncProduct && row.original.title !== syncProduct.title
+
+                if (hasTitleChange) {
+                    const syncTitleParts = syncProduct.title?.split(' - ') || []
+                    const newTitle = syncTitleParts.length > 1 ? syncTitleParts[syncTitleParts.length - 1] : 'Default'
+
+                    return (
+                        <div className="text-sm flex flex-col">
+                            <span className="text-green-600 font-bold">
+                                {landingUrl ? (
+                                    <a
+                                        href={landingUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="hover:text-green-700 hover:underline transition-colors"
+                                        onClick={(e) => e.stopPropagation()}
+                                    >
+                                        {newTitle}
+                                    </a>
+                                ) : (
+                                    newTitle
+                                )}
+                            </span>
+                            <span className="line-through text-muted-foreground opacity-60 text-xs">
                                 {title}
-                            </a>
-                        ) : (
-                            title
+                            </span>
+                        </div>
+                    )
+                }
+
+                return (
+                    <div className="text-sm text-muted-foreground flex items-center gap-2">
+                        <div className="flex-1">
+                            {landingUrl ? (
+                                <a
+                                    href={landingUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className={`hover:text-primary hover:underline transition-colors ${row.original.is_deleted ? 'line-through' : ''}`}
+                                    onClick={(e) => e.stopPropagation()}
+                                >
+                                    {title}
+                                </a>
+                            ) : (
+                                <span className={row.original.is_deleted ? 'line-through' : ''}>
+                                    {title}
+                                </span>
+                            )}
+                        </div>
+                        {row.original.is_deleted && (
+                            <span className="px-2 py-0.5 text-xs font-bold bg-red-100 text-red-700 rounded">
+                                DELETED
+                            </span>
                         )}
                     </div>
                 )
@@ -1257,9 +1497,10 @@ export function InventoryDataTable({
                                         key={row.id}
                                         className={`
                       border-b transition-colors
+                      ${row.original.is_deleted ? 'bg-red-50/50 hover:bg-red-100/50 opacity-70' : ''}
                       ${pendingDeletions.has(row.original.id!) ? 'bg-red-50 hover:bg-red-100 line-through' : ''}
-                      ${!pendingDeletions.has(row.original.id!) && (row.original.has_changes ? 'bg-green-50' : row.original.is_spu ? 'bg-background hover:bg-muted/50' : 'bg-muted/10 hover:bg-muted/30')}
-                      ${!pendingDeletions.has(row.original.id!) && (row.original.has_changes ? 'hover:bg-green-100' : row.original.is_spu ? 'hover:bg-muted/50' : 'hover:bg-muted/30')}
+                      ${!row.original.is_deleted && !pendingDeletions.has(row.original.id!) && (row.original.has_changes ? 'bg-green-50' : row.original.is_spu ? 'bg-background hover:bg-muted/50' : 'bg-muted/10 hover:bg-muted/30')}
+                      ${!row.original.is_deleted && !pendingDeletions.has(row.original.id!) && (row.original.has_changes ? 'hover:bg-green-100' : row.original.is_spu ? 'hover:bg-muted/50' : 'hover:bg-muted/30')}
                       font-medium
                     `}
                                     >
