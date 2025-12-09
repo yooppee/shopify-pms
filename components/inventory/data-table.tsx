@@ -95,9 +95,6 @@ export function InventoryDataTable({
         setPendingChanges(new Map())
     }, [products])
 
-    // 检查是否有未保存的更改
-    const hasUnsavedChanges = pendingChanges.size > 0 || pendingDeletions.size > 0 || !!pendingSyncData
-
     // 处理内部元数据更新 - 只更新本地状态并记录待保存的更改
     const handleUpdate = useCallback((variantId: number, field: string, value: any) => {
         const now = new Date().toISOString()
@@ -601,6 +598,15 @@ export function InventoryDataTable({
             }
         })
     }, [localProducts, pendingSyncData])
+
+    // 计算同步差异数量 (must be after data is defined)
+    const syncDiffCount = useMemo(() => {
+        if (!pendingSyncData) return 0
+        return data.filter(row => row.has_changes).length
+    }, [data, pendingSyncData])
+
+    // 检查是否有未保存的更改
+    const hasUnsavedChanges = pendingChanges.size > 0 || pendingDeletions.size > 0 || syncDiffCount > 0
 
     const columns = useMemo<ColumnDef<ProductNode>[]>(() => [
         ...(deleteMode ? [{
@@ -1190,7 +1196,7 @@ export function InventoryDataTable({
                             variant="outline"
                             size="sm"
                             onClick={() => setShowDiscardConfirm(true)}
-                            disabled={!hasUnsavedChanges || isSaving || isSyncing}
+                            disabled={(!hasUnsavedChanges && !pendingSyncData) || isSaving || isSyncing}
                         >
                             <Undo2 className="mr-2 h-4 w-4" />
                             Discard
@@ -1204,7 +1210,7 @@ export function InventoryDataTable({
                     >
                         <Save className={`mr-2 h-4 w-4 ${(isSaving || isSyncing) ? 'animate-spin' : ''}`} />
                         {isSyncing ? 'Syncing...' : isSaving ? 'Saving...' : hasUnsavedChanges
-                            ? `Save (${pendingChanges.size + pendingDeletions.size + (pendingSyncData ? 1 : 0)})`
+                            ? `Save (${pendingChanges.size + pendingDeletions.size + syncDiffCount})`
                             : 'Saved'}
                     </Button>
                     <ColumnVisibility columns={table.getAllColumns()} />
