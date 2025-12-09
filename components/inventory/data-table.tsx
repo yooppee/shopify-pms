@@ -984,15 +984,14 @@ export function InventoryDataTable({
                     : '库存尚未手动更新'
 
                 return (
-                    <div title={tooltipText}>
-                        <EditableCell
-                            productId={variant.id!}
-                            variantId={variant.variant_id!}
-                            field="manual_inventory"
-                            value={currentInventory}
-                            onUpdate={handleUpdate}
-                        />
-                    </div>
+                    <EditableCell
+                        productId={variant.id!}
+                        variantId={variant.variant_id!}
+                        field="manual_inventory"
+                        value={currentInventory}
+                        tooltip={tooltipText}
+                        onUpdate={handleUpdate}
+                    />
                 )
             },
         },

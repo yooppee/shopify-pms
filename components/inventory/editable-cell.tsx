@@ -9,6 +9,7 @@ interface EditableCellProps {
     field: string
     value: any
     format?: 'currency' | 'text' | 'number'
+    tooltip?: string
     onUpdate: (variantId: number, field: string, value: any) => void
 }
 
@@ -18,6 +19,7 @@ export function EditableCell({
     field,
     value,
     format = 'text',
+    tooltip = 'Click to edit',
     onUpdate
 }: EditableCellProps) {
     const [isEditing, setIsEditing] = useState(false)
@@ -81,7 +83,7 @@ export function EditableCell({
         <div
             className="cell-editable h-8 px-2 py-1 font-mono text-muted-foreground cursor-text hover:bg-muted/50 rounded transition-colors flex items-center"
             onClick={() => setIsEditing(true)}
-            title="Click to edit"
+            title={tooltip}
         >
             {getDisplayValue()}
         </div>
