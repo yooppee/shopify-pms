@@ -28,6 +28,10 @@ export async function GET(request: NextRequest) {
     try {
         const supabase = createServiceRoleClient()
 
+        // Get mode parameter (empty or all)
+        const searchParams = request.nextUrl.searchParams
+        const mode = searchParams.get('mode') || 'all'  // Default to 'all'
+
         // 1. Fetch all products from database to get handles
         console.log('📦 Fetching product handles from database...')
         const { data: dbProducts, error: fetchError } = await supabase
@@ -42,8 +46,18 @@ export async function GET(request: NextRequest) {
 
         console.log(`✅ Found ${dbProducts?.length || 0} variants in database`)
 
-        // 2. Get unique handles
-        const uniqueHandles = Array.from(new Set(dbProducts?.map(p => p.handle) || []))
+        // 2. Filter products based on mode
+        let productsToProcess = dbProducts || []
+        if (mode === 'empty') {
+            // Only process products with null/empty weight
+            productsToProcess = dbProducts?.filter(p => p.weight === null || p.weight === undefined) || []
+            console.log(`📋 Mode: empty - Found ${productsToProcess.length} products with null weight (out of ${dbProducts?.length || 0} total)`)
+        } else {
+            console.log(`📋 Mode: all - Processing all ${productsToProcess.length} products`)
+        }
+
+        // 3. Get unique handles from filtered products
+        const uniqueHandles = Array.from(new Set(productsToProcess.map(p => p.handle)))
         console.log(`📋 Processing ${uniqueHandles.length} unique products`)
 
         // 3. Sequential fetch with progress tracking
@@ -93,8 +107,8 @@ export async function GET(request: NextRequest) {
 
         console.log(`✅ Successfully fetched weight data for ${weightData.length} variants`)
 
-        // 4. Compare with database and return only products with differences
-        const productsWithChanges = dbProducts?.filter(dbProduct => {
+        // 4. Compare with filtered products and return only products with differences
+        const productsWithChanges = productsToProcess.filter(dbProduct => {
             const shopifyWeight = weightData.find(w => w.variant_id === dbProduct.variant_id)
             if (!shopifyWeight) return false
 
@@ -103,12 +117,12 @@ export async function GET(request: NextRequest) {
 
             // Consider as changed if values differ
             return dbWeight !== newWeight
-        }) || []
+        })
 
         console.log(`📊 Found ${productsWithChanges.length} products with weight changes`)
 
-        // 5. Create merged data with weight updates
-        const mergedProducts = dbProducts?.map(dbProduct => {
+        // 5. Create merged data with weight updates (only for processed products)
+        const mergedProducts = productsToProcess.map(dbProduct => {
             const shopifyWeight = weightData.find(w => w.variant_id === dbProduct.variant_id)
             return {
                 ...dbProduct,
@@ -145,6 +159,10 @@ export async function POST(request: NextRequest) {
     try {
         const supabase = createServiceRoleClient()
 
+        // Get mode parameter (empty or all)
+        const searchParams = request.nextUrl.searchParams
+        const mode = searchParams.get('mode') || 'all'  // Default to 'all'
+
         // Fetch weight data (reuse GET logic but with parallelization)
         console.log('📦 Fetching latest weight data from Shopify...')
         const { data: dbProducts } = await supabase
@@ -152,7 +170,17 @@ export async function POST(request: NextRequest) {
             .select('handle, variant_id, weight')
             .order('shopify_product_id')
 
-        const uniqueHandles = Array.from(new Set(dbProducts?.map(p => p.handle) || []))
+        // Filter products based on mode
+        let productsToProcess = dbProducts || []
+        if (mode === 'empty') {
+            // Only process products with null/empty weight
+            productsToProcess = dbProducts?.filter(p => p.weight === null || p.weight === undefined) || []
+            console.log(`📋 Mode: empty - Processing ${productsToProcess.length} products with null weight (out of ${dbProducts?.length || 0} total)`)
+        } else {
+            console.log(`📋 Mode: all - Processing all ${productsToProcess.length} products`)
+        }
+
+        const uniqueHandles = Array.from(new Set(productsToProcess.map(p => p.handle)))
         console.log(`📋 Processing ${uniqueHandles.length} unique products in parallel...`)
 
         const weightData: Array<{ variant_id: number; weight: number | null }> = []
@@ -197,18 +225,35 @@ export async function POST(request: NextRequest) {
 
         console.log(`✅ Fetched weight for ${weightData.length} variants`)
 
-        // Update database in batches for better performance
+        // Filter to only products with actual weight differences
+        const productsToUpdate = productsToProcess.filter(dbProduct => {
+            const shopifyWeight = weightData.find(w => w.variant_id === dbProduct.variant_id)
+            if (!shopifyWeight) return false
+
+            const dbWeight = dbProduct.weight
+            const newWeight = shopifyWeight.weight
+
+            // Only update if values differ
+            return dbWeight !== newWeight
+        })
+
+        console.log(`📊 Found ${productsToUpdate.length} products with weight differences (out of ${weightData.length} fetched)`)
+
+        // Update database in batches for better performance - ONLY for products with differences
         let updatedCount = 0
         const UPDATE_BATCH_SIZE = 50
 
-        for (let i = 0; i < weightData.length; i += UPDATE_BATCH_SIZE) {
-            const batch = weightData.slice(i, i + UPDATE_BATCH_SIZE)
+        for (let i = 0; i < productsToUpdate.length; i += UPDATE_BATCH_SIZE) {
+            const batch = productsToUpdate.slice(i, i + UPDATE_BATCH_SIZE)
 
-            const updatePromises = batch.map(async (weightUpdate) => {
+            const updatePromises = batch.map(async (dbProduct) => {
+                const shopifyWeight = weightData.find(w => w.variant_id === dbProduct.variant_id)
+                if (!shopifyWeight) return
+
                 const { error } = await supabase
                     .from('products')
-                    .update({ weight: weightUpdate.weight })
-                    .eq('variant_id', weightUpdate.variant_id)
+                    .update({ weight: shopifyWeight.weight })
+                    .eq('variant_id', dbProduct.variant_id)
 
                 if (!error) {
                     updatedCount++

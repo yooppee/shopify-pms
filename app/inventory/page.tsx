@@ -3,6 +3,7 @@
 import { Sidebar } from '@/components/layout/sidebar'
 import { InventoryDataTable } from '@/components/inventory/data-table'
 import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { RefreshCw, Scale } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
@@ -28,15 +29,15 @@ async function syncProducts() {
     return response.json()
 }
 
-async function fetchWeightData() {
-    const response = await fetch('/api/weight-sync')
+async function fetchWeightData(mode: 'empty' | 'all' = 'all') {
+    const response = await fetch(`/api/weight-sync?mode=${mode}`)
     if (!response.ok) throw new Error('Failed to fetch weight data')
     const data = await response.json()
     return data.products || []
 }
 
-async function updateWeights() {
-    const response = await fetch('/api/weight-sync', { method: 'POST' })
+async function updateWeights(mode: 'empty' | 'all' = 'all') {
+    const response = await fetch(`/api/weight-sync?mode=${mode}`, { method: 'POST' })
     if (!response.ok) throw new Error('Failed to update weights')
     return response.json()
 }
@@ -47,6 +48,8 @@ export default function InventoryPage() {
     const [pendingWeightData, setPendingWeightData] = useState<any[] | undefined>(undefined)
     const [isLoadingPreview, setIsLoadingPreview] = useState(false)
     const [isLoadingWeight, setIsLoadingWeight] = useState(false)
+    const [showModeDialog, setShowModeDialog] = useState(false)
+    const [currentWeightMode, setCurrentWeightMode] = useState<'empty' | 'all'>('all')
 
     const { data: products = [], isLoading, error } = useQuery({
         queryKey: ['products'],
@@ -109,8 +112,11 @@ export default function InventoryPage() {
                 duration: 4000,
                 icon: '✅',
             })
-            setPendingWeightData(undefined)
+            // Refetch data first to ensure fresh data from database
             await queryClient.invalidateQueries({ queryKey: ['products'] })
+            await queryClient.refetchQueries({ queryKey: ['products'] })
+            // Then clear pending state
+            setPendingWeightData(undefined)
         },
         onError: (error) => {
             console.error('❌ Weight update failed:', error)
@@ -121,32 +127,48 @@ export default function InventoryPage() {
         },
     })
 
-    // Fetch weight data for preview
-    const handleWeightUpdate = async () => {
-        console.log('⚖️ handleWeightUpdate called')
+    // Show mode selection dialog
+    const handleWeightUpdate = () => {
+        setShowModeDialog(true)
+    }
+
+    // Execute weight update with selected mode
+    const executeWeightUpdate = async (mode: 'empty' | 'all') => {
+        setShowModeDialog(false)
         setIsLoadingWeight(true)
+        setCurrentWeightMode(mode)  // Save the mode for later use in save operation
+
         try {
-            console.log('📡 Fetching weight data from individual product endpoints...')
-            const weightData = await fetchWeightData()
-            console.log('✅ Weight data fetched:', weightData?.length, 'products')
+            console.log(`⚖️ Weight update mode: ${mode}`)
+            const weightData = await fetchWeightData(mode)
+            console.log(`✅ Weight data fetched: ${weightData?.length} products`)
+
+            if (weightData.length === 0) {
+                toast(mode === 'empty' ? 'All products already have weight values' : 'No weight changes detected', {
+                    duration: 3000,
+                })
+            }
+
             setPendingWeightData(weightData)
-            console.log('✅ pendingWeightData set')
         } catch (error) {
             console.error('❌ Failed to fetch weight data:', error)
+            toast.error('Failed to fetch weight data', {
+                duration: 5000,
+            })
         } finally {
             setIsLoadingWeight(false)
-            console.log('🏁 handleWeightUpdate finished')
         }
     }
 
     // Save weight updates to database
     const handleSaveWeight = () => {
-        console.log('💾 handleSaveWeight called, triggering POST /api/weight-sync...')
+        console.log(`💾 handleSaveWeight called with mode: ${currentWeightMode}`)
         toast.loading('Updating weights... This may take a few moments.', {
             id: 'weight-update',
             duration: Infinity,
         })
-        weightMutation.mutate(undefined, {
+        // Pass the saved mode to the mutation
+        weightMutation.mutate(currentWeightMode, {
             onSettled: () => {
                 toast.dismiss('weight-update')
             }
@@ -231,6 +253,54 @@ export default function InventoryPage() {
                         />
                     )}
                 </div>
+
+                {/* Weight Update Mode Selection Dialog */}
+                <Dialog open={showModeDialog} onOpenChange={setShowModeDialog}>
+                    <DialogContent className="sm:max-w-md">
+                        <DialogHeader>
+                            <DialogTitle>选择更新模式</DialogTitle>
+                            <DialogDescription>
+                                选择如何更新产品重量数据
+                            </DialogDescription>
+                        </DialogHeader>
+
+                        <div className="space-y-3 py-4">
+                            {/* Option 1: Only Empty Values */}
+                            <Button
+                                onClick={() => executeWeightUpdate('empty')}
+                                className="w-full justify-start h-auto p-4 text-left"
+                                variant="outline"
+                            >
+                                <div className="flex-1">
+                                    <div className="font-semibold flex items-center gap-2 mb-1">
+                                        <Scale className="h-4 w-4" />
+                                        仅更新空值
+                                    </div>
+                                    <div className="text-sm text-muted-foreground font-normal">
+                                        只检查当前 weight 为空的产品，速度快（推荐用于日常维护）
+                                    </div>
+                                </div>
+                            </Button>
+
+                            {/* Option 2: Check All Changes */}
+                            <Button
+                                onClick={() => executeWeightUpdate('all')}
+                                className="w-full justify-start h-auto p-4 text-left"
+                                variant="outline"
+                            >
+                                <div className="flex-1">
+                                    <div className="font-semibold flex items-center gap-2 mb-1">
+                                        <RefreshCw className="h-4 w-4" />
+                                        检查所有变动
+                                    </div>
+                                    <div className="text-sm text-muted-foreground font-normal">
+                                        检查所有产品的 weight 变化，耗时较长（完整同步）
+                                    </div>
+                                </div>
+                            </Button>
+                        </div>
+                    </DialogContent>
+                </Dialog>
             </main>
         </div>
     )
