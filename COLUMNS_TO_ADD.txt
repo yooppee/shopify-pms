@@ -1,0 +1,112 @@
+// 请在 components/inventory/data-table.tsx 文件的第 1347 行（notes 列定义之后）添加以下代码：
+// 在 }, 之后，] 之前插入：
+
+        {
+            id: 'created_at',
+            header: () => <span className="text-foreground">Created At</span>,
+            size: 140,
+            cell: ({ row }) => {
+                const variant = row.original.is_spu ? row.original.subRows?.[0] : row.original
+                if (!variant || !variant.created_at) return <span className="text-muted-foreground">-</span>
+                
+                const formatTimestamp = (isoString: string) => {
+                    const date = new Date(isoString)
+                    return date.toLocaleString('zh-CN', {
+                        year: 'numeric',
+                        month: '2-digit',
+                        day: '2-digit',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                    })
+                }
+                
+                return (
+                    <span className="text-sm text-muted-foreground">
+                        {formatTimestamp(variant.created_at)}
+                    </span>
+                )
+            },
+        },
+        {
+            id: 'vendor',
+            header: () => <span className="text-muted-foreground">Vendor</span>,
+            size: 120,
+            cell: ({ row }) => {
+                if (row.original.is_spu && (row.original.subRows?.length || 0) > 1) {
+                    return <span className="text-muted-foreground">-</span>
+                }
+                const variant = row.original.is_spu ? row.original.subRows?.[0] : row.original
+                if (!variant) return <span className="text-muted-foreground">-</span>
+                return (
+                    <EditableCell
+                        productId={variant.id!}
+                        variantId={variant.variant_id!}
+                        field="vendor"
+                        value={variant.internal_meta?.vendor}
+                        onUpdate={handleUpdate}
+                    />
+                )
+            },
+        },
+        {
+            id: 'purchase_link',
+            header: () => <span className="text-muted-foreground">Purchase Link</span>,
+            size: 150,
+            cell: ({ row }) => {
+                if (row.original.is_spu && (row.original.subRows?.length || 0) > 1) {
+                    return <span className="text-muted-foreground">-</span>
+                }
+                const variant = row.original.is_spu ? row.original.subRows?.[0] : row.original
+                if (!variant) return <span className="text-muted-foreground">-</span>
+                
+                return (
+                    <EditableCell
+                        productId={variant.id!}
+                        variantId={variant.variant_id!}
+                        field="purchase_link"
+                        value={variant.internal_meta?.purchase_link}
+                        onUpdate={handleUpdate}
+                    />
+                )
+            },
+        },
+        {
+            id: 'weight',
+            header: () => <span className="text-foreground">Weight(g)</span>,
+            size: 80,
+            cell: ({ row }) => {
+                const variant = row.original.is_spu ? row.original.subRows?.[0] : row.original
+                if (!variant) return <span className="text-muted-foreground">-</span>
+
+                const dbWeight = variant.weight !== null ? Number(variant.weight) : null
+                
+                // Check for weight-only preview mode
+                if (pendingWeightData) {
+                    const weightData = pendingWeightData.find((p: any) => p.variant_id === variant.variant_id)
+                    const newWeight = weightData?.shopify_weight !== null && weightData?.shopify_weight !== undefined 
+                        ? Number(weightData.shopify_weight) 
+                        : null
+                    
+                    if (newWeight !== null && newWeight !== dbWeight) {
+                        return (
+                            <div className="bg-green-100 px-2 py-1 rounded">
+                                <span className="font-mono font-bold text-sm text-green-700">
+                                    {formatNumber(newWeight)}g
+                                </span>
+                            </div>
+                        )
+                    }
+                }
+
+                return (
+                    <span className="font-mono text-sm text-muted-foreground">
+                        {dbWeight !== null ? `${formatNumber(dbWeight)}g` : '-'}
+                    </span>
+                )
+            },
+        },
+
+// 同时请将第 1348 行的：
+// ], [deleteMode, pendingDeletions, handleDeleteToggle, handleDeleteAllToggle, handleUpdate])
+// 改为：
+// ], [deleteMode, pendingDeletions, handleDeleteToggle, handleDeleteAllToggle, handleUpdate, pendingWeightData])

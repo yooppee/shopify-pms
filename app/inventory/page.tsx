@@ -3,9 +3,10 @@
 import { Sidebar } from '@/components/layout/sidebar'
 import { InventoryDataTable } from '@/components/inventory/data-table'
 import { Button } from '@/components/ui/button'
-import { RefreshCw } from 'lucide-react'
+import { RefreshCw, Scale } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
+import toast, { Toaster } from 'react-hot-toast'
 
 async function fetchProducts() {
     const response = await fetch('/api/products')  // Changed: fetch from database
@@ -27,10 +28,25 @@ async function syncProducts() {
     return response.json()
 }
 
+async function fetchWeightData() {
+    const response = await fetch('/api/weight-sync')
+    if (!response.ok) throw new Error('Failed to fetch weight data')
+    const data = await response.json()
+    return data.products || []
+}
+
+async function updateWeights() {
+    const response = await fetch('/api/weight-sync', { method: 'POST' })
+    if (!response.ok) throw new Error('Failed to update weights')
+    return response.json()
+}
+
 export default function InventoryPage() {
     const queryClient = useQueryClient()
     const [pendingSyncData, setPendingSyncData] = useState<any[] | undefined>(undefined)
+    const [pendingWeightData, setPendingWeightData] = useState<any[] | undefined>(undefined)
     const [isLoadingPreview, setIsLoadingPreview] = useState(false)
+    const [isLoadingWeight, setIsLoadingWeight] = useState(false)
 
     const { data: products = [], isLoading, error } = useQuery({
         queryKey: ['products'],
@@ -84,6 +100,64 @@ export default function InventoryPage() {
         setPendingSyncData(undefined)
     }
 
+    // Weight update mutation
+    const weightMutation = useMutation({
+        mutationFn: updateWeights,
+        onSuccess: async (data) => {
+            console.log('✅ Weight update successful, response:', data)
+            toast.success(`Successfully updated ${data.updated} products!`, {
+                duration: 4000,
+                icon: '✅',
+            })
+            setPendingWeightData(undefined)
+            await queryClient.invalidateQueries({ queryKey: ['products'] })
+        },
+        onError: (error) => {
+            console.error('❌ Weight update failed:', error)
+            toast.error('Failed to update weights. Please try again.', {
+                duration: 5000,
+                icon: '❌',
+            })
+        },
+    })
+
+    // Fetch weight data for preview
+    const handleWeightUpdate = async () => {
+        console.log('⚖️ handleWeightUpdate called')
+        setIsLoadingWeight(true)
+        try {
+            console.log('📡 Fetching weight data from individual product endpoints...')
+            const weightData = await fetchWeightData()
+            console.log('✅ Weight data fetched:', weightData?.length, 'products')
+            setPendingWeightData(weightData)
+            console.log('✅ pendingWeightData set')
+        } catch (error) {
+            console.error('❌ Failed to fetch weight data:', error)
+        } finally {
+            setIsLoadingWeight(false)
+            console.log('🏁 handleWeightUpdate finished')
+        }
+    }
+
+    // Save weight updates to database
+    const handleSaveWeight = () => {
+        console.log('💾 handleSaveWeight called, triggering POST /api/weight-sync...')
+        toast.loading('Updating weights... This may take a few moments.', {
+            id: 'weight-update',
+            duration: Infinity,
+        })
+        weightMutation.mutate(undefined, {
+            onSettled: () => {
+                toast.dismiss('weight-update')
+            }
+        })
+    }
+
+    // Discard weight preview
+    const handleDiscardWeight = () => {
+        setPendingWeightData(undefined)
+    }
+
     return (
         <div className="flex h-screen">
             <Sidebar />
@@ -99,6 +173,11 @@ export default function InventoryPage() {
                                         <span className="text-orange-500 font-medium">Sync Preview: </span>
                                         {new Set(pendingSyncData.map((p: { shopify_product_id: number }) => p.shopify_product_id)).size} SPUs, {pendingSyncData.length} Variants
                                     </>
+                                ) : pendingWeightData ? (
+                                    <>
+                                        <span className="text-green-600 font-medium">Weight Update Preview: </span>
+                                        {pendingWeightData.filter((p: any) => p.weight !== p.shopify_weight).length} products with changes
+                                    </>
                                 ) : products.length > 0 ? (
                                     <>
                                         {new Set(products.map((p: { shopify_product_id: number }) => p.shopify_product_id)).size} SPUs, {products.length} Variants
@@ -108,14 +187,24 @@ export default function InventoryPage() {
                                 )}
                             </p>
                         </div>
-                        <Button
-                            onClick={handleSyncPreview}
-                            disabled={isLoadingPreview || syncMutation.isPending}
-                            variant="outline"
-                        >
-                            <RefreshCw className={`mr-2 h-4 w-4 ${isLoadingPreview ? 'animate-spin' : ''}`} />
-                            {isLoadingPreview ? 'Loading...' : 'Sync from Shopify'}
-                        </Button>
+                        <div className="flex gap-2">
+                            <Button
+                                onClick={handleWeightUpdate}
+                                disabled={isLoadingWeight || weightMutation.isPending || isLoadingPreview || syncMutation.isPending}
+                                variant="outline"
+                            >
+                                <Scale className={`mr-2 h-4 w-4 ${isLoadingWeight ? 'animate-spin' : ''}`} />
+                                {isLoadingWeight ? 'Updating...' : 'Update Weight'}
+                            </Button>
+                            <Button
+                                onClick={handleSyncPreview}
+                                disabled={isLoadingPreview || syncMutation.isPending || isLoadingWeight || weightMutation.isPending}
+                                variant="outline"
+                            >
+                                <RefreshCw className={`mr-2 h-4 w-4 ${isLoadingPreview ? 'animate-spin' : ''}`} />
+                                {isLoadingPreview ? 'Loading...' : 'Sync from Shopify'}
+                            </Button>
+                        </div>
                     </div>
 
                     {/* Content */}
@@ -131,9 +220,13 @@ export default function InventoryPage() {
                         <InventoryDataTable
                             products={products}
                             pendingSyncData={pendingSyncData}
+                            pendingWeightData={pendingWeightData}
                             onSaveSync={handleSaveSync}
                             onDiscardSync={handleDiscardSync}
+                            onSaveWeight={handleSaveWeight}
+                            onDiscardWeight={handleDiscardWeight}
                             isSyncing={syncMutation.isPending}
+                            isUpdatingWeight={weightMutation.isPending}
                             onRefresh={() => queryClient.invalidateQueries({ queryKey: ['products'] })}
                         />
                     )}

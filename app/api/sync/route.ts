@@ -62,15 +62,16 @@ export async function POST(request: NextRequest) {
         const transformedProducts = await fetchAndTransformShopifyProducts()
         console.log(`Fetched ${transformedProducts.length} product variants`)
 
-        // Fetch existing products to preserve manual inventory
+        // Fetch existing products to preserve manual inventory and weight
         const { data: existingProducts } = await supabase
             .from('products')
-            .select('variant_id, inventory_quantity, internal_meta')
+            .select('variant_id, inventory_quantity, weight, internal_meta')
 
         const existingMap = new Map(
             existingProducts?.map(p => [
                 p.variant_id,
                 {
+                    weight: p.weight,
                     internal_meta: p.internal_meta
                 }
             ]) || []
@@ -94,7 +95,9 @@ export async function POST(request: NextRequest) {
                 compare_at_price: product.compare_at_price,
                 // Update inventory from Shopify
                 inventory_quantity: product.inventory_quantity,
-                weight: product.weight,
+                // IMPORTANT: Preserve existing weight! Don't overwrite with bulk endpoint data
+                // Use dedicated Weight Update feature for accurate weight sync
+                weight: existing?.weight ?? product.weight,
                 image_url: product.image_url,
                 landing_page_url: product.landing_page_url,
                 internal_meta: internalMeta,

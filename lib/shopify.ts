@@ -184,7 +184,7 @@ export function transformShopifyProducts(
                     ? parseFloat(variant.compare_at_price)
                     : null,
                 inventory_quantity: variant.inventory_quantity ?? 0,
-                weight: variant.weight || null,
+                weight: variant.weight !== null && variant.weight !== undefined ? variant.weight : null,
                 image_url: variantImageUrl,
                 landing_page_url: landingPageUrl,
             })

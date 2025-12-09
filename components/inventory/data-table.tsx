@@ -59,18 +59,26 @@ interface PendingChange {
 interface InventoryDataTableProps {
     products: ProductWithCalculations[]
     pendingSyncData?: ProductWithCalculations[] // New prop for sync preview
+    pendingWeightData?: any[] // New prop for weight update preview
     onSaveSync?: () => void
     onDiscardSync?: () => void
+    onSaveWeight?: () => void // New handler for weight save
+    onDiscardWeight?: () => void // New handler for weight discard
     isSyncing?: boolean // New prop to indicate sync in progress
+    isUpdatingWeight?: boolean // New prop to indicate weight update in progress
     onRefresh?: () => void // Callback to refresh parent data
 }
 
 export function InventoryDataTable({
     products,
     pendingSyncData,
+    pendingWeightData,
     onSaveSync,
     onDiscardSync,
+    onSaveWeight,
+    onDiscardWeight,
     isSyncing = false,
+    isUpdatingWeight = false,
     onRefresh,
 }: InventoryDataTableProps) {
     const [sorting, setSorting] = useState<SortingState>([])
@@ -146,7 +154,7 @@ export function InventoryDataTable({
             pendingSyncDataCount: pendingSyncData?.length
         })
 
-        if (pendingChanges.size === 0 && pendingDeletions.size === 0 && !pendingSyncData) {
+        if (pendingChanges.size === 0 && pendingDeletions.size === 0 && !pendingSyncData && !pendingWeightData) {
             console.log('⏭️ No changes to save, returning early')
             return
         }
@@ -211,6 +219,14 @@ export function InventoryDataTable({
                 console.log('📡 Calling onSaveSync...')
                 onSaveSync()
                 setIsSaving(false) // Clear local saving state since sync is handled by parent mutation
+                return
+            }
+
+            // Process weight updates if in weight preview mode
+            if (pendingWeightData && onSaveWeight) {
+                console.log('⚖️ Calling onSaveWeight...')
+                onSaveWeight()
+                setIsSaving(false) // Clear local saving state since weight update is handled by parent mutation
                 return
             }
 
@@ -715,8 +731,19 @@ export function InventoryDataTable({
         return data.filter(row => row.has_changes).length
     }, [data, pendingSyncData])
 
+    // 计算 weight 更新差异数量
+    const weightDiffCount = useMemo(() => {
+        if (!pendingWeightData) return 0
+        return pendingWeightData.filter((p: any) => {
+            const dbWeight = p.weight !== null && p.weight !== undefined ? Number(p.weight) : null
+            const newWeight = p.shopify_weight !== null && p.shopify_weight !== undefined ? Number(p.shopify_weight) : null
+            return dbWeight !== newWeight
+        }).length
+    }, [pendingWeightData])
+
     // 检查是否有未保存的更改
-    const hasUnsavedChanges = pendingChanges.size > 0 || pendingDeletions.size > 0 || syncDiffCount > 0
+    const hasUnsavedChanges = pendingChanges.size > 0 || pendingDeletions.size > 0 || syncDiffCount > 0 || weightDiffCount > 0
+
 
     const columns = useMemo<ColumnDef<ProductNode>[]>(() => [
         ...(deleteMode ? [{
@@ -1345,7 +1372,111 @@ export function InventoryDataTable({
                 )
             },
         },
-    ], [deleteMode, pendingDeletions, handleDeleteToggle, handleDeleteAllToggle, handleUpdate])
+
+        {
+            id: 'created_at',
+            header: () => <span className="text-foreground">Created At</span>,
+            size: 140,
+            cell: ({ row }) => {
+                const variant = row.original.is_spu ? row.original.subRows?.[0] : row.original
+                if (!variant || !variant.created_at) return <span className="text-muted-foreground">-</span>
+
+                const formatTimestamp = (isoString: string) => {
+                    const date = new Date(isoString)
+                    return date.toLocaleString('zh-CN', {
+                        year: 'numeric',
+                        month: '2-digit',
+                        day: '2-digit',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                    })
+                }
+
+                return (
+                    <span className="text-sm text-muted-foreground">
+                        {formatTimestamp(variant.created_at)}
+                    </span>
+                )
+            },
+        },
+        {
+            id: 'vendor',
+            header: () => <span className="text-muted-foreground">Vendor</span>,
+            size: 120,
+            cell: ({ row }) => {
+                if (row.original.is_spu && (row.original.subRows?.length || 0) > 1) {
+                    return <span className="text-muted-foreground">-</span>
+                }
+                const variant = row.original.is_spu ? row.original.subRows?.[0] : row.original
+                if (!variant) return <span className="text-muted-foreground">-</span>
+                return (
+                    <EditableCell
+                        productId={variant.id!}
+                        variantId={variant.variant_id!}
+                        field="vendor"
+                        value={variant.internal_meta?.vendor}
+                        onUpdate={handleUpdate}
+                    />
+                )
+            },
+        },
+        {
+            id: 'purchase_link',
+            header: () => <span className="text-muted-foreground">Purchase Link</span>,
+            size: 150,
+            cell: ({ row }) => {
+                if (row.original.is_spu && (row.original.subRows?.length || 0) > 1) {
+                    return <span className="text-muted-foreground">-</span>
+                }
+                const variant = row.original.is_spu ? row.original.subRows?.[0] : row.original
+                if (!variant) return <span className="text-muted-foreground">-</span>
+
+                return (
+                    <EditableCell
+                        productId={variant.id!}
+                        variantId={variant.variant_id!}
+                        field="purchase_link"
+                        value={variant.internal_meta?.purchase_link}
+                        onUpdate={handleUpdate}
+                    />
+                )
+            },
+        },
+        {
+            id: 'weight',
+            header: () => <span className="text-foreground">Weight(g)</span>,
+            size: 80,
+            cell: ({ row }) => {
+                const variant = row.original.is_spu ? row.original.subRows?.[0] : row.original
+                if (!variant) return <span className="text-muted-foreground">-</span>
+
+                const dbWeight = variant.weight !== null ? Number(variant.weight) : null
+
+                if (pendingWeightData) {
+                    const weightData = pendingWeightData.find((p: any) => p.variant_id === variant.variant_id)
+                    const newWeight = weightData?.shopify_weight !== null && weightData?.shopify_weight !== undefined
+                        ? Number(weightData.shopify_weight)
+                        : null
+
+                    if (newWeight !== null && newWeight !== dbWeight) {
+                        return (
+                            <div className="bg-green-100 px-2 py-1 rounded">
+                                <span className="font-mono font-bold text-sm text-green-700">
+                                    {formatNumber(newWeight)}g
+                                </span>
+                            </div>
+                        )
+                    }
+                }
+
+                return (
+                    <span className="font-mono text-sm text-muted-foreground">
+                        {dbWeight !== null ? `${formatNumber(dbWeight)}g` : '-'}
+                    </span>
+                )
+            },
+        },
+    ], [deleteMode, pendingDeletions, handleDeleteToggle, handleDeleteAllToggle, handleUpdate, pendingWeightData])
 
     const table = useReactTable({
         data,
@@ -1418,6 +1549,7 @@ export function InventoryDataTable({
                                     setDeleteMode(false)
                                     setShowDiscardConfirm(false)
                                     onDiscardSync?.() // Exit sync preview mode
+                                    onDiscardWeight?.() // Exit weight preview mode
                                 }}
                             >
                                 Confirm
@@ -1435,7 +1567,7 @@ export function InventoryDataTable({
                             variant="outline"
                             size="sm"
                             onClick={() => setShowDiscardConfirm(true)}
-                            disabled={(!hasUnsavedChanges && !pendingSyncData) || isSaving || isSyncing}
+                            disabled={(!hasUnsavedChanges && !pendingSyncData && !pendingWeightData) || isSaving || isSyncing || isUpdatingWeight}
                         >
                             <Undo2 className="mr-2 h-4 w-4" />
                             Discard
@@ -1445,11 +1577,11 @@ export function InventoryDataTable({
                         variant={hasUnsavedChanges ? "default" : "outline"}
                         size="sm"
                         onClick={handleSave}
-                        disabled={!hasUnsavedChanges || isSaving || isSyncing}
+                        disabled={!hasUnsavedChanges || isSaving || isSyncing || isUpdatingWeight}
                     >
                         <Save className={`mr-2 h-4 w-4 ${(isSaving || isSyncing) ? 'animate-spin' : ''}`} />
-                        {isSyncing ? 'Syncing...' : isSaving ? 'Saving...' : hasUnsavedChanges
-                            ? `Save (${pendingChanges.size + pendingDeletions.size + syncDiffCount})`
+                        {isSyncing ? 'Syncing...' : isSaving ? 'Saving...' : isUpdatingWeight ? 'Updating...' : hasUnsavedChanges
+                            ? `Save (${pendingChanges.size + pendingDeletions.size + syncDiffCount + weightDiffCount})`
                             : 'Saved'}
                     </Button>
                     <ColumnVisibility columns={table.getAllColumns()} />

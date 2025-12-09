@@ -22,9 +22,11 @@ export interface InternalMeta {
     cost_price?: number
     supplier_name?: string
     supplier?: string // Alternative field for supplier
+    purchase_link?: string // Supplier purchase link
     profit_margin?: number
     notes?: string
     manual_inventory?: number // For manual inventory override
+    inventory_updated_at?: string // Timestamp of last manual inventory update
     [key: string]: any // Allow custom fields
 }
 
