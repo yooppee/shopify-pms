@@ -4,7 +4,8 @@ import { Sidebar } from '@/components/layout/sidebar'
 import { InventoryDataTable } from '@/components/inventory/data-table'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
-import { RefreshCw, Scale } from 'lucide-react'
+import { RefreshCw, Scale, FileSpreadsheet } from 'lucide-react'
+import { ImportDialog } from '@/components/inventory/import-dialog'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import toast, { Toaster } from 'react-hot-toast'
@@ -50,6 +51,7 @@ export default function InventoryPage() {
     const [isLoadingWeight, setIsLoadingWeight] = useState(false)
     const [showModeDialog, setShowModeDialog] = useState(false)
     const [currentWeightMode, setCurrentWeightMode] = useState<'empty' | 'all'>('all')
+    const [importDialogOpen, setImportDialogOpen] = useState(false)
 
     const { data: products = [], isLoading, error } = useQuery({
         queryKey: ['products'],
@@ -211,6 +213,14 @@ export default function InventoryPage() {
                         </div>
                         <div className="flex gap-2">
                             <Button
+                                onClick={() => setImportDialogOpen(true)}
+                                variant="outline"
+                                disabled={isLoading || isLoadingWeight || isLoadingPreview}
+                            >
+                                <FileSpreadsheet className="mr-2 h-4 w-4" />
+                                Import Excel
+                            </Button>
+                            <Button
                                 onClick={handleWeightUpdate}
                                 disabled={isLoadingWeight || weightMutation.isPending || isLoadingPreview || syncMutation.isPending}
                                 variant="outline"
@@ -253,6 +263,16 @@ export default function InventoryPage() {
                         />
                     )}
                 </div>
+
+                {/* Import Dialog */}
+                <ImportDialog
+                    open={importDialogOpen}
+                    onOpenChange={setImportDialogOpen}
+                    onSuccess={() => {
+                        setImportDialogOpen(false)
+                        queryClient.invalidateQueries({ queryKey: ['products'] })
+                    }}
+                />
 
                 {/* Weight Update Mode Selection Dialog */}
                 <Dialog open={showModeDialog} onOpenChange={setShowModeDialog}>

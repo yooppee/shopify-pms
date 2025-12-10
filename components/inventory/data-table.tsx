@@ -1661,6 +1661,8 @@ export function InventoryDataTable({
                         <Trash2 className="mr-2 h-4 w-4" />
                         {deleteMode ? 'Cancel Delete' : 'Delete'}
                     </Button>
+
+
                     {showDiscardConfirm ? (
                         <div className="flex items-center gap-2 bg-destructive/10 border border-destructive/30 rounded-md px-3 py-1">
                             <span className="text-sm text-destructive">Discard changes?</span>
@@ -1821,6 +1823,7 @@ export function InventoryDataTable({
                     </div>
                 )}
             </div>
+
         </div>
     )
 }
