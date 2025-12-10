@@ -51,7 +51,6 @@ export async function GET(request: NextRequest) {
             { header: 'SKU', key: 'sku', width: 20 },
             { header: 'Product / Variant Title', key: 'title', width: 40 },
             { header: 'Cost Price', key: 'cost_price', width: 15 },
-            { header: 'Supplier', key: 'supplier', width: 20 },
             { header: 'Notes', key: 'notes', width: 30 },
             { header: 'Vendor', key: 'vendor', width: 20 },
             { header: 'Purchase Link', key: 'purchase_link', width: 30 },
@@ -80,7 +79,6 @@ export async function GET(request: NextRequest) {
                 sku: product.sku,
                 title: title,
                 cost_price: meta.cost_price || '',
-                supplier: meta.supplier || '',
                 notes: meta.notes || '',
                 vendor: meta.vendor || '',
                 purchase_link: meta.purchase_link || ''

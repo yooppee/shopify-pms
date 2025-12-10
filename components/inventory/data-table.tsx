@@ -23,11 +23,18 @@ import { EditableCell } from './editable-cell'
 import { ColumnVisibility } from './column-visibility'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { RefreshCw, Search, ChevronRight, ChevronDown, Save, Undo2, X, Trash2 } from 'lucide-react'
+import { RefreshCw, Search, ChevronRight, ChevronDown, Save, Undo2, X, Trash2, Filter } from 'lucide-react'
 import { Checkbox } from '@/components/ui/checkbox'
 import Image from 'next/image'
 import { supabaseUntyped } from '@/lib/supabase/client'
 import { DiffCell } from './sync-indicator'
+import {
+    DropdownMenu,
+    DropdownMenuTrigger,
+    DropdownMenuContent,
+    DropdownMenuCheckboxItem,
+    DropdownMenuSeparator,
+} from '@/components/ui/dropdown-menu'
 
 // 扩展类型以支持层级结�?
 interface ProductNode extends Partial<ProductWithCalculations> {
@@ -107,6 +114,17 @@ export function InventoryDataTable({
         return []
     })
     const [draggedColumn, setDraggedColumn] = useState<string | null>(null)
+    const [vendorFilter, setVendorFilter] = useState<Set<string>>(new Set())
+
+    // Extract unique vendors for filter dropdown
+    const uniqueVendors = useMemo(() => {
+        const vendors = new Set<string>()
+        localProducts.forEach(product => {
+            const vendor = product.internal_meta?.vendor
+            if (vendor) vendors.add(vendor)
+        })
+        return Array.from(vendors).sort()
+    }, [localProducts])
 
     // Drag and drop handlers for column reordering
     const handleDragStart = useCallback((e: React.DragEvent, columnId: string) => {
@@ -250,7 +268,7 @@ export function InventoryDataTable({
         setIsSaving(true)
 
         try {
-            // First, save any pending local changes (cost, supplier, notes, inventory edits)
+            // First, save any pending local changes (cost, vendor, notes, inventory edits)
             if (pendingChanges.size > 0) {
                 // �?variantId 分组更改
                 const changesByVariant = new Map<number, Record<string, any>>()
@@ -813,11 +831,31 @@ export function InventoryDataTable({
         })
     }, [localProducts, pendingSyncData])
 
+    // Apply vendor filter to hierarchical data
+    const filteredData = useMemo<ProductNode[]>(() => {
+        // If no filter is set, return all data
+        if (vendorFilter.size === 0) return data
+
+        return data.filter(spuNode => {
+            // For SPU nodes, check if any variant matches the filter
+            if (spuNode.is_spu && spuNode.subRows) {
+                return spuNode.subRows.some(variant => {
+                    const vendor = variant.internal_meta?.vendor
+                    return vendor && vendorFilter.has(vendor)
+                })
+            }
+            // For non-SPU rows (shouldn't happen in normal display)
+            const vendor = spuNode.internal_meta?.vendor
+            return vendor && vendorFilter.has(vendor)
+        })
+    }, [data, vendorFilter])
+
     // 计算同步差异数量 (must be after data is defined)
     const syncDiffCount = useMemo(() => {
         if (!pendingSyncData) return 0
         return data.filter(row => row.has_changes).length
     }, [data, pendingSyncData])
+
 
     // 计算 weight 更新差异数量
     const weightDiffCount = useMemo(() => {
@@ -1382,29 +1420,7 @@ export function InventoryDataTable({
             },
         },
 
-        {
-            id: 'supplier',
-            header: () => <span className="text-foreground">Supplier</span>,
-            size: 120,
-            cell: ({ row }) => {
-                // For SPU with multiple variants, show dash
-                if (row.original.is_spu && (row.original.subRows?.length || 0) > 1) {
-                    return <span className="text-foreground">-</span>
-                }
-                // For single variant SPU or variant row, show editable cell
-                const variant = row.original.is_spu ? row.original.subRows?.[0] : row.original
-                if (!variant) return <span className="text-foreground">-</span>
-                return (
-                    <EditableCell
-                        productId={variant.id!}
-                        variantId={variant.variant_id!}
-                        field="supplier"
-                        value={variant.internal_meta?.supplier}
-                        onUpdate={handleUpdate}
-                    />
-                )
-            },
-        },
+
         {
             id: 'profit',
             header: () => <span className="text-foreground">Profit</span>,
@@ -1490,7 +1506,49 @@ export function InventoryDataTable({
         },
         {
             id: 'vendor',
-            header: () => <span className="text-foreground">Vendor</span>,
+            header: () => (
+                <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                        <button className="flex items-center gap-1 text-foreground hover:text-primary focus:outline-none">
+                            <span>Vendor</span>
+                            <Filter className={`h-3 w-3 ${vendorFilter.size > 0 ? 'text-primary' : ''}`} />
+                            {vendorFilter.size > 0 && (
+                                <span className="text-xs bg-primary text-primary-foreground rounded-full px-1.5 py-0.5 min-w-[1.25rem] text-center">
+                                    {vendorFilter.size}
+                                </span>
+                            )}
+                        </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="max-h-[300px] overflow-y-auto">
+                        <DropdownMenuCheckboxItem
+                            checked={vendorFilter.size === 0}
+                            onCheckedChange={() => setVendorFilter(new Set())}
+                        >
+                            All Vendors
+                        </DropdownMenuCheckboxItem>
+                        <DropdownMenuSeparator />
+                        {uniqueVendors.map(vendor => (
+                            <DropdownMenuCheckboxItem
+                                key={vendor}
+                                checked={vendorFilter.has(vendor)}
+                                onCheckedChange={(checked) => {
+                                    setVendorFilter(prev => {
+                                        const next = new Set(prev)
+                                        if (checked) {
+                                            next.add(vendor)
+                                        } else {
+                                            next.delete(vendor)
+                                        }
+                                        return next
+                                    })
+                                }}
+                            >
+                                {vendor}
+                            </DropdownMenuCheckboxItem>
+                        ))}
+                    </DropdownMenuContent>
+                </DropdownMenu>
+            ),
             size: 120,
             cell: ({ row }) => {
                 if (row.original.is_spu && (row.original.subRows?.length || 0) > 1) {
@@ -1509,6 +1567,7 @@ export function InventoryDataTable({
                 )
             },
         },
+
         {
             id: 'purchase_link',
             header: () => <span className="text-foreground">Purchase Link</span>,
@@ -1565,7 +1624,7 @@ export function InventoryDataTable({
                 )
             },
         },
-    ], [deleteMode, pendingDeletions, handleDeleteToggle, handleDeleteAllToggle, handleUpdate, pendingWeightData])
+    ], [deleteMode, pendingDeletions, handleDeleteToggle, handleDeleteAllToggle, handleUpdate, pendingWeightData, vendorFilter, uniqueVendors])
 
     // Fixed columns that should always be at the beginning in fixed order
     const FIXED_COLUMNS = ['delete', 'expander', 'image', 'title']
@@ -1602,7 +1661,7 @@ export function InventoryDataTable({
     }, [columns])
 
     const table = useReactTable({
-        data,
+        data: filteredData,
         columns,
         state: {
             sorting,

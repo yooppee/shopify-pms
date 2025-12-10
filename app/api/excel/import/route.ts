@@ -57,20 +57,19 @@ export async function POST(request: NextRequest) {
             }
 
             // Column mapping (1-based index):
-            // 1: Handle, 2: SKU, 3: Title, 4: Cost Price, 5: Supplier, 6: Notes, 7: Vendor, 8: Purchase Link
+            // 1: Handle, 2: SKU, 3: Title, 4: Cost Price, 5: Notes, 6: Vendor, 7: Purchase Link
 
             // Adjust indices based on actual template generation
-            // Template: Handle, SKU, Title, Cost Price, Supplier, Notes, Vendor, Purchase Link
-            // indices: 1, 2, 3, 4, 5, 6, 7, 8
+            // Template: Handle, SKU, Title, Cost Price, Notes, Vendor, Purchase Link
+            // indices: 1, 2, 3, 4, 5, 6, 7
 
             const handle = row.getCell(1).text || row.getCell(1).value?.toString()
             if (!handle) return
 
             const costPriceRaw = row.getCell(4).value
-            const supplier = row.getCell(5).text || row.getCell(5).value?.toString()
-            const notes = row.getCell(6).text || row.getCell(6).value?.toString()
-            const vendor = row.getCell(7).text || row.getCell(7).value?.toString()
-            const purchaseLink = row.getCell(8).text || row.getCell(8).value?.toString()
+            const notes = row.getCell(5).text || row.getCell(5).value?.toString()
+            const vendor = row.getCell(6).text || row.getCell(6).value?.toString()
+            const purchaseLink = row.getCell(7).text || row.getCell(7).value?.toString()
 
             // Parse cost price
             let costPrice: number | undefined
@@ -85,7 +84,6 @@ export async function POST(request: NextRequest) {
                 handle,
                 changes: {
                     ...(costPrice !== undefined && { cost_price: costPrice }),
-                    ...(supplier !== undefined && { supplier: supplier }), // Update even if empty string to allow clearing? Yes.
                     ...(notes !== undefined && { notes: notes }),
                     ...(vendor !== undefined && { vendor: vendor }),
                     ...(purchaseLink !== undefined && { purchase_link: purchaseLink }),

@@ -87,7 +87,7 @@ export function ImportDialog({ open, onOpenChange, onSuccess }: ImportDialogProp
                 <DialogHeader>
                     <DialogTitle>Import Inventory Data</DialogTitle>
                     <DialogDescription>
-                        Update cost, supplier, notes, and other internal data using an Excel file.
+                        Update cost, vendor, notes, and other internal data using an Excel file.
                     </DialogDescription>
                 </DialogHeader>
 

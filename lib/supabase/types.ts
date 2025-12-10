@@ -20,9 +20,8 @@ export interface Product {
 
 export interface InternalMeta {
     cost_price?: number
-    supplier_name?: string
-    supplier?: string // Alternative field for supplier
-    purchase_link?: string // Supplier purchase link
+    vendor?: string // Vendor/supplier name
+    purchase_link?: string // Vendor purchase link
     profit_margin?: number
     notes?: string
     manual_inventory?: number // For manual inventory override

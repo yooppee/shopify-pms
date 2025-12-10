@@ -83,7 +83,7 @@ export async function POST(request: NextRequest) {
 
             // Clone existing meta to avoid mutation, preserving all manual data
             const internalMeta = { ...(existing?.internal_meta || {}) }
-            // All internal_meta fields (cost_price, supplier, notes, manual_inventory, inventory_updated_at) are preserved
+            // All internal_meta fields (cost_price, vendor, notes, manual_inventory, inventory_updated_at) are preserved
 
             return {
                 variant_id: product.variant_id,
