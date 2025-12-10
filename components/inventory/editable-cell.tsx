@@ -74,14 +74,14 @@ export function EditableCell({
                 onBlur={handleBlur}
                 onKeyDown={handleKeyDown}
                 autoFocus
-                className="h-8 font-mono"
+                className="h-8 font-mono text-xs"
             />
         )
     }
 
     return (
         <div
-            className="cell-editable h-8 px-2 py-1 font-mono text-muted-foreground cursor-text hover:bg-muted/50 rounded transition-colors flex items-center"
+            className="cell-editable h-8 px-2 py-1 font-mono text-xs text-foreground cursor-text hover:bg-muted/50 rounded transition-colors flex items-center"
             onClick={() => setIsEditing(true)}
             title={tooltip}
         >

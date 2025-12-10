@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import React, { useMemo, useState, useEffect, useCallback } from 'react'
 import {
@@ -15,6 +15,7 @@ import {
     ExpandedState,
     Row,
     ColumnSizingState,
+    ColumnOrderState,
 } from '@tanstack/react-table'
 import { ProductWithCalculations } from '@/lib/supabase/types'
 import { formatCurrency, formatNumber, calculateGrossProfit } from '@/lib/utils'
@@ -28,7 +29,7 @@ import Image from 'next/image'
 import { supabaseUntyped } from '@/lib/supabase/client'
 import { DiffCell } from './sync-indicator'
 
-// 扩展类型以支持层级结构
+// 扩展类型以支持层级结�?
 interface ProductNode extends Partial<ProductWithCalculations> {
     id: string // Unique ID for table (SPU ID or Variant ID)
     is_spu: boolean
@@ -92,6 +93,93 @@ export function InventoryDataTable({
     const [pendingDeletions, setPendingDeletions] = useState<Set<string>>(new Set())
     const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({})
     const [showDiscardConfirm, setShowDiscardConfirm] = useState(false)
+    const [columnOrder, setColumnOrder] = useState<ColumnOrderState>(() => {
+        if (typeof window !== 'undefined') {
+            const saved = localStorage.getItem('inventory-column-order')
+            if (saved) {
+                try {
+                    return JSON.parse(saved)
+                } catch {
+                    return []
+                }
+            }
+        }
+        return []
+    })
+    const [draggedColumn, setDraggedColumn] = useState<string | null>(null)
+
+    // Drag and drop handlers for column reordering
+    const handleDragStart = useCallback((e: React.DragEvent, columnId: string) => {
+        setDraggedColumn(columnId)
+        e.dataTransfer.effectAllowed = 'move'
+        e.dataTransfer.setData('text/plain', columnId)
+    }, [])
+
+    const handleDragOver = useCallback((e: React.DragEvent) => {
+        e.preventDefault()
+        e.dataTransfer.dropEffect = 'move'
+    }, [])
+
+    const handleDragEnd = useCallback(() => {
+        setDraggedColumn(null)
+    }, [])
+
+    const handleDrop = useCallback((e: React.DragEvent, targetColumnId: string, allColumnIds: string[]) => {
+        e.preventDefault()
+        const sourceColumnId = e.dataTransfer.getData('text/plain')
+
+        // Fixed columns that cannot be reordered
+        const FIXED_COLS = ['delete', 'expander', 'image', 'title']
+
+        // Don't allow dropping on or moving fixed columns
+        if (FIXED_COLS.includes(sourceColumnId) || FIXED_COLS.includes(targetColumnId)) {
+            setDraggedColumn(null)
+            return
+        }
+
+        if (sourceColumnId === targetColumnId || !sourceColumnId) {
+            setDraggedColumn(null)
+            return
+        }
+
+        // Get current movable columns order from localStorage
+        let savedMovable: string[] = []
+        if (typeof window !== 'undefined') {
+            try {
+                const saved = localStorage.getItem('inventory-column-order')
+                if (saved) savedMovable = JSON.parse(saved)
+            } catch { }
+        }
+
+        // Get all movable columns from current columns
+        const allMovable = allColumnIds.filter(id => !FIXED_COLS.includes(id))
+        const orderedMovable = savedMovable.filter(id => allMovable.includes(id))
+        const missingMovable = allMovable.filter(id => !orderedMovable.includes(id))
+        const currentMovableOrder = [...orderedMovable, ...missingMovable]
+
+        // Reorder within movable columns only
+        const sourceIndex = currentMovableOrder.indexOf(sourceColumnId)
+        const targetIndex = currentMovableOrder.indexOf(targetColumnId)
+
+        if (sourceIndex === -1 || targetIndex === -1) {
+            setDraggedColumn(null)
+            return
+        }
+
+        const newMovableOrder = [...currentMovableOrder]
+        newMovableOrder.splice(sourceIndex, 1)
+        newMovableOrder.splice(targetIndex, 0, sourceColumnId)
+
+        // Save movable order to localStorage
+        localStorage.setItem('inventory-column-order', JSON.stringify(newMovableOrder))
+
+        // Build full order: fixed columns (in fixed order) + new movable order
+        const fixedCols = FIXED_COLS.filter(id => allColumnIds.includes(id))
+        const newFullOrder = [...fixedCols, ...newMovableOrder]
+
+        setColumnOrder(newFullOrder)
+        setDraggedColumn(null)
+    }, [])
 
     // Debug: Log when pendingSyncData changes
     useEffect(() => {
@@ -101,11 +189,11 @@ export function InventoryDataTable({
     // 更新本地产品数据
     useEffect(() => {
         setLocalProducts(products)
-        // 清空待保存的更改（数据已刷新）
+        // 清空待保存的更改（数据已刷新�?
         setPendingChanges(new Map())
     }, [products])
 
-    // 处理内部元数据更新 - 只更新本地状态并记录待保存的更改
+    // 处理内部元数据更�?- 只更新本地状态并记录待保存的更改
     const handleUpdate = useCallback((variantId: number, field: string, value: any) => {
         const now = new Date().toISOString()
 
@@ -116,7 +204,7 @@ export function InventoryDataTable({
                     ...product.internal_meta,
                     [field]: value
                 }
-                // 如果是库存字段，同时更新时间戳
+                // 如果是库存字段，同时更新时间�?
                 if (field === 'manual_inventory') {
                     updatedMeta.inventory_updated_at = now
                 }
@@ -133,7 +221,7 @@ export function InventoryDataTable({
         setPendingChanges(prev => {
             const newChanges = new Map(prev)
             newChanges.set(changeKey, { variantId, field, value })
-            // 如果是库存字段，同时记录时间戳更改
+            // 如果是库存字段，同时记录时间戳更�?
             if (field === 'manual_inventory') {
                 newChanges.set(`${variantId}-inventory_updated_at`, {
                     variantId,
@@ -145,7 +233,7 @@ export function InventoryDataTable({
         })
     }, [])
 
-    // 批量保存所有待保存的更改
+    // 批量保存所有待保存的更�?
     const handleSave = async () => {
         console.log('💾 handleSave called with:', {
             pendingChanges: pendingChanges.size,
@@ -164,7 +252,7 @@ export function InventoryDataTable({
         try {
             // First, save any pending local changes (cost, supplier, notes, inventory edits)
             if (pendingChanges.size > 0) {
-                // 按 variantId 分组更改
+                // �?variantId 分组更改
                 const changesByVariant = new Map<number, Record<string, any>>()
 
                 pendingChanges.forEach(change => {
@@ -174,7 +262,7 @@ export function InventoryDataTable({
                     changesByVariant.get(change.variantId)![change.field] = change.value
                 })
 
-                // 对每个 variant 执行更新
+                // 对每�?variant 执行更新
                 const updatePromises = Array.from(changesByVariant.entries()).map(async ([variantId, fieldChanges]) => {
                     // 获取当前 internal_meta
                     const { data: currentProduct, error: fetchError } = await supabaseUntyped
@@ -191,7 +279,7 @@ export function InventoryDataTable({
                         ...fieldChanges
                     }
 
-                    // 更新数据库
+                    // 更新数据�?
                     const { error } = await supabaseUntyped
                         .from('products')
                         .update({ internal_meta: updatedMeta })
@@ -208,7 +296,7 @@ export function InventoryDataTable({
 
             // Process deletions FIRST if in delete mode (before sync)
             if (pendingDeletions.size > 0) {
-                console.log('🗑️ Processing deletions...')
+                console.log('🗑�?Processing deletions...')
                 await handleConfirmDelete()
                 // handleConfirmDelete will reload the page, so we return here
                 return
@@ -239,7 +327,7 @@ export function InventoryDataTable({
         }
     }
 
-    // 处理删除行
+    // 处理删除�?
     const handleDeleteToggle = useCallback((rowId: string) => {
         setPendingDeletions(prev => {
             const next = new Set(prev)
@@ -252,7 +340,7 @@ export function InventoryDataTable({
         })
     }, [])
 
-    // 处理全选删除
+    // 处理全选删�?
     const handleDeleteAllToggle = useCallback((rows: Row<ProductNode>[]) => {
         setPendingDeletions(prev => {
             const next = new Set(prev)
@@ -281,15 +369,15 @@ export function InventoryDataTable({
                 if (id.startsWith('variant-')) {
                     variantIdsToDelete.push(parseInt(id.replace('variant-', '')))
                 } else if (id.startsWith('spu-')) {
-                    // 如果是SPU，找到对应的variants (需要从 localProducts 中查找)
+                    // 如果是SPU，找到对应的variants (需要从 localProducts 中查�?
                     const spuId = parseInt(id.replace('spu-', ''))
                     const variants = localProducts.filter(p => p.shopify_product_id === spuId)
                     variants.forEach(v => variantIdsToDelete.push(v.variant_id))
                 }
             })
 
-            console.log('🗑️ Delete requested for IDs:', pendingDeletions)
-            console.log('🗑️ Variant IDs to delete:', variantIdsToDelete)
+            console.log('🗑�?Delete requested for IDs:', pendingDeletions)
+            console.log('🗑�?Variant IDs to delete:', variantIdsToDelete)
 
             if (variantIdsToDelete.length === 0) {
                 console.warn('⚠️ No variants to delete!')
@@ -304,10 +392,10 @@ export function InventoryDataTable({
             })
 
             const result = await response.json()
-            console.log('🗑️ Delete result:', result)
+            console.log('🗑�?Delete result:', result)
 
             if (!response.ok || !result.success) {
-                console.error('❌ Delete API failed:', result)
+                console.error('�?Delete API failed:', result)
                 throw new Error(result.error || result.details || 'Delete failed')
             }
 
@@ -337,7 +425,7 @@ export function InventoryDataTable({
             grouped.get(spuId)!.push(product)
         })
 
-        // 如果有同步预览数据，进行对比 merge 和排序
+        // 如果有同步预览数据，进行对比 merge 和排�?
         if (pendingSyncData) {
             console.log('🔍 pendingSyncData detected:', pendingSyncData?.length, 'products')
             const syncMap = new Map(pendingSyncData.map(p => [p.variant_id, p]))
@@ -363,7 +451,7 @@ export function InventoryDataTable({
                     ? formatCurrency(minPrice)
                     : `${formatCurrency(minPrice)} - ${formatCurrency(maxPrice)}`
 
-                // 计算划线价范围
+                // 计算划线价范�?
                 const comparePrices = variants
                     .map(v => v.compare_at_price)
                     .filter((p): p is number => p !== null)
@@ -576,7 +664,7 @@ export function InventoryDataTable({
 
             // Debug: Log which variants are considered "deleted"
             if (deletedVariantsList.length > 0) {
-                console.log(`🗑️ DELETED products (in DB but NOT in Shopify): ${deletedVariantsList.length} variants`)
+                console.log(`🗑�?DELETED products (in DB but NOT in Shopify): ${deletedVariantsList.length} variants`)
                 console.log('   Variant IDs:', deletedVariantsList)
             }
 
@@ -678,7 +766,7 @@ export function InventoryDataTable({
                 ? formatCurrency(minPrice)
                 : `${formatCurrency(minPrice)} - ${formatCurrency(maxPrice)}`
 
-            // 计算划线价范围
+            // 计算划线价范�?
             const comparePrices = variants
                 .map(v => v.compare_at_price)
                 .filter((p): p is number => p !== null)
@@ -747,7 +835,7 @@ export function InventoryDataTable({
 
     const columns = useMemo<ColumnDef<ProductNode>[]>(() => [
         ...(deleteMode ? [{
-            id: 'select',
+            id: 'delete',
             header: ({ table }) => {
                 const rows = table.getRowModel().rows
                 const selectedCount = rows.filter(row => pendingDeletions.has(row.original.id!)).length
@@ -772,7 +860,7 @@ export function InventoryDataTable({
                         className="p-1 hover:bg-destructive/10 rounded group"
                     >
                         <Trash2
-                            className={`h-4 w-4 ${pendingDeletions.has(row.original.id!) ? 'text-destructive' : 'text-muted-foreground group-hover:text-destructive'}`}
+                            className={`h-4 w-4 ${pendingDeletions.has(row.original.id!) ? 'text-destructive' : 'text-foreground group-hover:text-destructive'}`}
                         />
                     </button>
                 </div>
@@ -860,7 +948,7 @@ export function InventoryDataTable({
                                                     </div>
                                                 </div>
                                                 <div className="flex flex-col gap-1">
-                                                    <span className="text-xs text-muted-foreground line-through">Old</span>
+                                                    <span className="text-xs text-foreground line-through">Old</span>
                                                     <div className="w-48 h-48 relative bg-background border rounded-lg shadow-xl overflow-hidden opacity-60">
                                                         <Image
                                                             src={row.original.image_url!}
@@ -896,6 +984,7 @@ export function InventoryDataTable({
             },
         },
         {
+            id: 'title',
             accessorKey: 'title',
             header: () => <span className="text-foreground">Product / Variant</span>,
             size: 350,
@@ -927,7 +1016,7 @@ export function InventoryDataTable({
 
                             return (
                                 <div className="font-medium flex flex-col">
-                                    <span className="text-green-600 font-bold text-sm">
+                                    <span className="text-green-600 font-bold text-xs">
                                         {landingUrl ? (
                                             <a
                                                 href={landingUrl}
@@ -942,11 +1031,11 @@ export function InventoryDataTable({
                                             newBaseTitle
                                         )}
                                     </span>
-                                    <span className="line-through text-muted-foreground opacity-60 text-xs">
+                                    <span className="line-through text-foreground opacity-60 text-xs">
                                         {row.original.title}
                                     </span>
                                     {row.original.variant_count && row.original.variant_count > 1 && (
-                                        <span className="text-xs text-muted-foreground font-normal">
+                                        <span className="text-xs text-foreground font-normal">
                                             ({row.original.variant_count} variants)
                                         </span>
                                     )}
@@ -963,18 +1052,18 @@ export function InventoryDataTable({
                                         href={landingUrl}
                                         target="_blank"
                                         rel="noopener noreferrer"
-                                        className={`hover:text-primary hover:underline transition-colors ${row.original.is_deleted ? 'line-through text-muted-foreground' : ''}`}
+                                        className={`hover:text-primary hover:underline transition-colors ${row.original.is_deleted ? 'line-through text-foreground' : ''}`}
                                         onClick={(e) => e.stopPropagation()}
                                     >
                                         {row.original.title}
                                     </a>
                                 ) : (
-                                    <span className={row.original.is_deleted ? 'line-through text-muted-foreground' : ''}>
+                                    <span className={row.original.is_deleted ? 'line-through text-foreground' : ''}>
                                         {row.original.title}
                                     </span>
                                 )}
                                 {row.original.variant_count && row.original.variant_count > 1 && (
-                                    <span className="ml-2 text-xs text-muted-foreground font-normal">
+                                    <span className="ml-2 text-xs text-foreground font-normal">
                                         ({row.original.variant_count} variants)
                                     </span>
                                 )}
@@ -1001,7 +1090,7 @@ export function InventoryDataTable({
                     const newTitle = syncTitleParts.length > 1 ? syncTitleParts[syncTitleParts.length - 1] : 'Default'
 
                     return (
-                        <div className="text-sm flex flex-col">
+                        <div className="text-xs flex flex-col">
                             <span className="text-green-600 font-bold">
                                 {landingUrl ? (
                                     <a
@@ -1017,7 +1106,7 @@ export function InventoryDataTable({
                                     newTitle
                                 )}
                             </span>
-                            <span className="line-through text-muted-foreground opacity-60 text-xs">
+                            <span className="line-through text-foreground opacity-60 text-xs">
                                 {title}
                             </span>
                         </div>
@@ -1025,7 +1114,7 @@ export function InventoryDataTable({
                 }
 
                 return (
-                    <div className="text-sm text-muted-foreground flex items-center gap-2">
+                    <div className="text-xs text-foreground flex items-center gap-2">
                         <div className="flex-1">
                             {landingUrl ? (
                                 <a
@@ -1081,15 +1170,15 @@ export function InventoryDataTable({
 
                             return (
                                 <div className="flex flex-col font-mono">
-                                    <span className="text-green-600 font-bold text-sm">{syncPriceRange}</span>
-                                    <span className="line-through text-muted-foreground opacity-60 text-xs">{row.original.price_range}</span>
+                                    <span className="text-green-600 font-bold text-xs">{syncPriceRange}</span>
+                                    <span className="line-through text-foreground opacity-60 text-xs">{row.original.price_range}</span>
                                 </div>
                             )
                         }
                     }
 
                     return (
-                        <span className="font-mono text-sm">
+                        <span className="font-mono text-xs">
                             {row.original.price_range}
                         </span>
                     )
@@ -1098,14 +1187,14 @@ export function InventoryDataTable({
                 if (syncVariant && Number(syncVariant.price) !== Number(row.original.price)) {
                     return (
                         <div className="flex flex-col font-mono">
-                            <span className="text-green-600 font-bold text-sm">{formatCurrency(syncVariant.price)}</span>
-                            <span className="line-through text-muted-foreground opacity-60 text-xs">{formatCurrency(row.original.price!)}</span>
+                            <span className="text-green-600 font-bold text-xs">{formatCurrency(syncVariant.price)}</span>
+                            <span className="line-through text-foreground opacity-60 text-xs">{formatCurrency(row.original.price!)}</span>
                         </div>
                     )
                 }
 
                 return (
-                    <span className="font-mono text-sm">
+                    <span className="font-mono text-xs">
                         {formatCurrency(row.original.price!)}
                     </span>
                 )
@@ -1142,15 +1231,15 @@ export function InventoryDataTable({
 
                             return (
                                 <div className="flex flex-col font-mono">
-                                    <span className="text-green-600 font-bold text-sm">{syncCompareRange}</span>
-                                    <span className="line-through text-muted-foreground opacity-60 text-xs">{row.original.compare_at_price_range}</span>
+                                    <span className="text-green-600 font-bold text-xs">{syncCompareRange}</span>
+                                    <span className="line-through text-foreground opacity-60 text-xs">{row.original.compare_at_price_range}</span>
                                 </div>
                             )
                         }
                     }
 
                     return (
-                        <span className="font-mono text-sm">
+                        <span className="font-mono text-xs">
                             {row.original.compare_at_price_range}
                         </span>
                     )
@@ -1163,10 +1252,10 @@ export function InventoryDataTable({
                 if (syncVariant && syncCompare !== dbCompare) {
                     return (
                         <div className="flex flex-col font-mono">
-                            <span className="text-green-600 font-bold text-sm">
+                            <span className="text-green-600 font-bold text-xs">
                                 {syncVariant.compare_at_price ? formatCurrency(syncVariant.compare_at_price) : '-'}
                             </span>
-                            <span className="line-through text-muted-foreground opacity-60 text-xs">
+                            <span className="line-through text-foreground opacity-60 text-xs">
                                 {row.original.compare_at_price ? formatCurrency(row.original.compare_at_price) : '-'}
                             </span>
                         </div>
@@ -1174,7 +1263,7 @@ export function InventoryDataTable({
                 }
 
                 return (
-                    <span className="font-mono text-sm">
+                    <span className="font-mono text-xs">
                         {row.original.compare_at_price ? formatCurrency(row.original.compare_at_price) : '-'}
                     </span>
                 )
@@ -1182,7 +1271,7 @@ export function InventoryDataTable({
         },
         {
             id: 'inventory',
-            header: () => <span className="text-muted-foreground">Inventory</span>,
+            header: () => <span className="text-foreground">Inventory</span>,
             size: 80,
             cell: ({ row }) => {
                 // For SPU with multiple variants, show total inventory
@@ -1203,21 +1292,21 @@ export function InventoryDataTable({
 
                         return (
                             <div className="flex flex-col font-mono">
-                                <span className="text-green-600 font-bold text-sm">{formatNumber(syncTotalInventory)}</span>
-                                <span className="line-through text-muted-foreground opacity-60 text-xs">{formatNumber(row.original.total_inventory!)}</span>
+                                <span className="text-green-600 font-bold text-xs">{formatNumber(syncTotalInventory)}</span>
+                                <span className="line-through text-foreground opacity-60 text-xs">{formatNumber(row.original.total_inventory!)}</span>
                             </div>
                         )
                     }
 
                     return (
-                        <div className="h-8 px-2 py-1 font-mono font-medium flex items-center">
+                        <div className="h-8 px-2 py-1 font-mono font-medium text-xs flex items-center">
                             {formatNumber(row.original.total_inventory!)}
                         </div>
                     )
                 }
                 // For single variant SPU or variant row, show editable cell
                 const variant = row.original.is_spu ? row.original.subRows?.[0] : row.original
-                if (!variant) return <span className="text-muted-foreground">-</span>
+                if (!variant) return <span className="text-foreground">-</span>
 
                 const syncVariant = row.original.sync_product
 
@@ -1228,8 +1317,8 @@ export function InventoryDataTable({
                 if (syncInventory !== undefined && syncInventory !== currentInventory) {
                     return (
                         <div className="flex flex-col font-mono">
-                            <span className="text-green-600 font-bold text-sm">{syncInventory}</span>
-                            <span className="line-through text-muted-foreground opacity-60 text-xs">{currentInventory}</span>
+                            <span className="text-green-600 font-bold text-xs">{syncInventory}</span>
+                            <span className="line-through text-foreground opacity-60 text-xs">{currentInventory}</span>
                         </div>
                     )
                 }
@@ -1264,7 +1353,7 @@ export function InventoryDataTable({
         },
         {
             id: 'cost_price',
-            header: () => <span className="text-muted-foreground">Cost</span>,
+            header: () => <span className="text-foreground">Cost</span>,
             size: 80,
             cell: ({ row }) => {
                 // For SPU with multiple variants, show average cost
@@ -1272,14 +1361,14 @@ export function InventoryDataTable({
                     const variantCount = row.original.subRows?.length || 1
                     const avgCost = (row.original.total_cost || 0) / variantCount
                     return (
-                        <div className="h-8 px-2 py-1 font-mono flex items-center">
+                        <div className="h-8 px-2 py-1 font-mono text-xs flex items-center">
                             {formatCurrency(avgCost)}
                         </div>
                     )
                 }
                 // For single variant SPU or variant row, show editable cell
                 const variant = row.original.is_spu ? row.original.subRows?.[0] : row.original
-                if (!variant) return <span className="text-muted-foreground">-</span>
+                if (!variant) return <span className="text-foreground">-</span>
                 return (
                     <EditableCell
                         productId={variant.id!}
@@ -1295,16 +1384,16 @@ export function InventoryDataTable({
 
         {
             id: 'supplier',
-            header: () => <span className="text-muted-foreground">Supplier</span>,
+            header: () => <span className="text-foreground">Supplier</span>,
             size: 120,
             cell: ({ row }) => {
                 // For SPU with multiple variants, show dash
                 if (row.original.is_spu && (row.original.subRows?.length || 0) > 1) {
-                    return <span className="text-muted-foreground">-</span>
+                    return <span className="text-foreground">-</span>
                 }
                 // For single variant SPU or variant row, show editable cell
                 const variant = row.original.is_spu ? row.original.subRows?.[0] : row.original
-                if (!variant) return <span className="text-muted-foreground">-</span>
+                if (!variant) return <span className="text-foreground">-</span>
                 return (
                     <EditableCell
                         productId={variant.id!}
@@ -1327,7 +1416,7 @@ export function InventoryDataTable({
                     const avgProfit = (row.original.total_profit || 0) / variantCount
                     return (
                         <div className="h-8 px-2 py-1 flex items-center">
-                            <span className={`font-mono font-medium ${avgProfit > 0 ? 'text-green-600' : avgProfit < 0 ? 'text-red-600' : ''}`}>
+                            <span className={`font-mono font-medium text-xs ${avgProfit > 0 ? 'text-green-600' : avgProfit < 0 ? 'text-red-600' : ''}`}>
                                 {formatCurrency(avgProfit)}
                             </span>
                         </div>
@@ -1336,14 +1425,14 @@ export function InventoryDataTable({
 
                 // For single variant SPU or variant row
                 const variant = row.original.is_spu ? row.original.subRows?.[0] : row.original
-                if (!variant) return <span className="text-muted-foreground">-</span>
+                if (!variant) return <span className="text-foreground">-</span>
 
                 const profit = calculateGrossProfit(
                     variant.price!,
                     variant.internal_meta?.cost_price
                 )
                 return (
-                    <span className={`font-mono text-sm ${profit && profit > 0 ? 'text-green-600' : profit && profit < 0 ? 'text-red-600' : ''}`}>
+                    <span className={`font-mono text-xs ${profit && profit > 0 ? 'text-green-600' : profit && profit < 0 ? 'text-red-600' : ''}`}>
                         {profit !== null ? formatCurrency(profit) : '-'}
                     </span>
                 )
@@ -1351,16 +1440,16 @@ export function InventoryDataTable({
         },
         {
             id: 'notes',
-            header: () => <span className="text-muted-foreground">Notes</span>,
+            header: () => <span className="text-foreground">Notes</span>,
             size: 150,
             cell: ({ row }) => {
                 // For SPU with multiple variants, show dash
                 if (row.original.is_spu && (row.original.subRows?.length || 0) > 1) {
-                    return <span className="text-muted-foreground">-</span>
+                    return <span className="text-foreground">-</span>
                 }
                 // For single variant SPU or variant row, show editable cell
                 const variant = row.original.is_spu ? row.original.subRows?.[0] : row.original
-                if (!variant) return <span className="text-muted-foreground">-</span>
+                if (!variant) return <span className="text-foreground">-</span>
                 return (
                     <EditableCell
                         productId={variant.id!}
@@ -1379,7 +1468,7 @@ export function InventoryDataTable({
             size: 140,
             cell: ({ row }) => {
                 const variant = row.original.is_spu ? row.original.subRows?.[0] : row.original
-                if (!variant || !variant.created_at) return <span className="text-muted-foreground">-</span>
+                if (!variant || !variant.created_at) return <span className="text-foreground">-</span>
 
                 const formatTimestamp = (isoString: string) => {
                     const date = new Date(isoString)
@@ -1393,7 +1482,7 @@ export function InventoryDataTable({
                 }
 
                 return (
-                    <span className="text-sm text-muted-foreground">
+                    <span className="text-xs text-foreground">
                         {formatTimestamp(variant.created_at)}
                     </span>
                 )
@@ -1401,14 +1490,14 @@ export function InventoryDataTable({
         },
         {
             id: 'vendor',
-            header: () => <span className="text-muted-foreground">Vendor</span>,
+            header: () => <span className="text-foreground">Vendor</span>,
             size: 120,
             cell: ({ row }) => {
                 if (row.original.is_spu && (row.original.subRows?.length || 0) > 1) {
-                    return <span className="text-muted-foreground">-</span>
+                    return <span className="text-foreground">-</span>
                 }
                 const variant = row.original.is_spu ? row.original.subRows?.[0] : row.original
-                if (!variant) return <span className="text-muted-foreground">-</span>
+                if (!variant) return <span className="text-foreground">-</span>
                 return (
                     <EditableCell
                         productId={variant.id!}
@@ -1422,14 +1511,14 @@ export function InventoryDataTable({
         },
         {
             id: 'purchase_link',
-            header: () => <span className="text-muted-foreground">Purchase Link</span>,
+            header: () => <span className="text-foreground">Purchase Link</span>,
             size: 150,
             cell: ({ row }) => {
                 if (row.original.is_spu && (row.original.subRows?.length || 0) > 1) {
-                    return <span className="text-muted-foreground">-</span>
+                    return <span className="text-foreground">-</span>
                 }
                 const variant = row.original.is_spu ? row.original.subRows?.[0] : row.original
-                if (!variant) return <span className="text-muted-foreground">-</span>
+                if (!variant) return <span className="text-foreground">-</span>
 
                 return (
                     <EditableCell
@@ -1448,7 +1537,7 @@ export function InventoryDataTable({
             size: 80,
             cell: ({ row }) => {
                 const variant = row.original.is_spu ? row.original.subRows?.[0] : row.original
-                if (!variant) return <span className="text-muted-foreground">-</span>
+                if (!variant) return <span className="text-foreground">-</span>
 
                 const dbWeight = variant.weight !== null ? Number(variant.weight) : null
 
@@ -1461,7 +1550,7 @@ export function InventoryDataTable({
                     if (newWeight !== null && newWeight !== dbWeight) {
                         return (
                             <div className="bg-green-100 px-2 py-1 rounded">
-                                <span className="font-mono font-bold text-sm text-green-700">
+                                <span className="font-mono font-bold text-xs text-green-700">
                                     {formatNumber(newWeight)}g
                                 </span>
                             </div>
@@ -1470,13 +1559,47 @@ export function InventoryDataTable({
                 }
 
                 return (
-                    <span className="font-mono text-sm text-muted-foreground">
+                    <span className="font-mono text-xs text-foreground">
                         {dbWeight !== null ? `${formatNumber(dbWeight)}g` : '-'}
                     </span>
                 )
             },
         },
     ], [deleteMode, pendingDeletions, handleDeleteToggle, handleDeleteAllToggle, handleUpdate, pendingWeightData])
+
+    // Fixed columns that should always be at the beginning in fixed order
+    const FIXED_COLUMNS = ['delete', 'expander', 'image', 'title']
+
+    // Sync columnOrder with actual columns - ensure fixed columns are always at the beginning
+    useEffect(() => {
+        const columnIds = columns.map(c => c.id || '').filter(id => id)
+
+        // Separate fixed and movable columns from current columns
+        const fixedCols = FIXED_COLUMNS.filter(id => columnIds.includes(id))
+        const movableCols = columnIds.filter(id => !FIXED_COLUMNS.includes(id))
+
+        // Read saved movable order from localStorage
+        let savedMovable: string[] = []
+        if (typeof window !== 'undefined') {
+            try {
+                const saved = localStorage.getItem('inventory-column-order')
+                if (saved) savedMovable = JSON.parse(saved)
+            } catch { }
+        }
+
+        // Use saved order for movable columns, filter to only existing columns
+        const orderedMovable = savedMovable.filter(id => movableCols.includes(id))
+        const missingMovable = movableCols.filter(id => !orderedMovable.includes(id))
+
+        // Build final order: fixed columns first (in fixed order), then movable
+        const finalOrder = [
+            ...fixedCols,
+            ...orderedMovable,
+            ...missingMovable
+        ]
+
+        setColumnOrder(finalOrder)
+    }, [columns])
 
     const table = useReactTable({
         data,
@@ -1487,6 +1610,7 @@ export function InventoryDataTable({
             globalFilter,
             expanded,
             columnSizing,
+            columnOrder,
         },
         initialState: {
             pagination: {
@@ -1506,6 +1630,7 @@ export function InventoryDataTable({
         onGlobalFilterChange: setGlobalFilter,
         onExpandedChange: setExpanded,
         onColumnSizingChange: setColumnSizing,
+        onColumnOrderChange: setColumnOrder,
     })
 
     return (
@@ -1513,7 +1638,7 @@ export function InventoryDataTable({
             {/* Toolbar */}
             <div className="flex items-center justify-between gap-4">
                 <div className="flex-1 flex items-center gap-2">
-                    <Search className="h-4 w-4 text-muted-foreground" />
+                    <Search className="h-4 w-4 text-foreground" />
                     <Input
                         placeholder="Search products..."
                         value={globalFilter ?? ''}
@@ -1595,30 +1720,42 @@ export function InventoryDataTable({
                         <thead className="sticky top-0 bg-background border-b z-10 shadow-sm">
                             {table.getHeaderGroups().map((headerGroup) => (
                                 <tr key={headerGroup.id}>
-                                    {headerGroup.headers.map((header) => (
-                                        <th
-                                            key={header.id}
-                                            className="px-4 py-3 text-left font-medium text-muted-foreground bg-background whitespace-nowrap relative"
-                                            style={{ width: header.getSize() }}
-                                        >
-                                            {header.isPlaceholder
-                                                ? null
-                                                : flexRender(
-                                                    header.column.columnDef.header,
-                                                    header.getContext()
+                                    {headerGroup.headers.map((header) => {
+                                        const isFixedColumn = ['delete', 'expander', 'image', 'title'].includes(header.column.id)
+                                        const isDragging = draggedColumn === header.column.id
+                                        const allColumnIds = table.getAllLeafColumns().map(c => c.id)
+
+                                        return (
+                                            <th
+                                                key={header.id}
+                                                draggable={!isFixedColumn && !header.isPlaceholder}
+                                                onDragStart={(e) => !isFixedColumn && handleDragStart(e, header.column.id)}
+                                                onDragOver={handleDragOver}
+                                                onDrop={(e) => !isFixedColumn && handleDrop(e, header.column.id, allColumnIds)}
+                                                onDragEnd={handleDragEnd}
+                                                className={`px-4 py-3 text-left font-medium text-foreground bg-background whitespace-nowrap relative transition-opacity ${isDragging ? 'opacity-50' : ''
+                                                    } ${!isFixedColumn && !header.isPlaceholder ? 'cursor-grab active:cursor-grabbing' : ''}`}
+                                                style={{ width: header.getSize() }}
+                                            >
+                                                {header.isPlaceholder
+                                                    ? null
+                                                    : flexRender(
+                                                        header.column.columnDef.header,
+                                                        header.getContext()
+                                                    )}
+                                                {header.column.getCanResize() && (
+                                                    <div
+                                                        onMouseDown={header.getResizeHandler()}
+                                                        onTouchStart={header.getResizeHandler()}
+                                                        className={`absolute right-0 top-0 h-full w-1 cursor-col-resize select-none touch-none ${header.column.getIsResizing()
+                                                            ? 'bg-primary'
+                                                            : 'bg-muted-foreground/50 hover:bg-primary'
+                                                            }`}
+                                                    />
                                                 )}
-                                            {header.column.getCanResize() && (
-                                                <div
-                                                    onMouseDown={header.getResizeHandler()}
-                                                    onTouchStart={header.getResizeHandler()}
-                                                    className={`absolute right-0 top-0 h-full w-1 cursor-col-resize select-none touch-none ${header.column.getIsResizing()
-                                                        ? 'bg-primary'
-                                                        : 'bg-muted-foreground/50 hover:bg-primary'
-                                                        }`}
-                                                />
-                                            )}
-                                        </th>
-                                    ))}
+                                            </th>
+                                        )
+                                    })}
                                 </tr>
                             ))}
                         </thead>
@@ -1657,7 +1794,7 @@ export function InventoryDataTable({
 
             {/* Pagination (Simplified since we show mostly all) */}
             <div className="flex items-center justify-between">
-                <div className="text-sm text-muted-foreground">
+                <div className="text-sm text-foreground">
                     Showing {data.length} SPUs
                 </div>
                 {table.getPageCount() > 1 && (
@@ -1687,3 +1824,11 @@ export function InventoryDataTable({
         </div>
     )
 }
+
+
+
+
+
+
+
+
