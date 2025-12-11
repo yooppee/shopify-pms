@@ -12,6 +12,9 @@ export default function LoginPage() {
         setIsLoading(true)
         setError(null)
 
+        // Artificial delay for better UX
+        await new Promise(resolve => setTimeout(resolve, 800))
+
         const result = await login(formData)
 
         if (result?.error) {
@@ -58,53 +61,53 @@ export default function LoginPage() {
 
                 {/* Login Form */}
                 <form action={handleSubmit} className="space-y-5">
-                    <div className="space-y-1.5">
-                        <label
-                            htmlFor="email"
-                            className="block text-sm font-medium text-gray-700"
-                        >
-                            Email address
-                        </label>
-                        <input
-                            id="email"
-                            name="email"
-                            type="email"
-                            autoComplete="email"
-                            required
-                            disabled={isLoading}
-                            className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-black focus:border-black transition-colors disabled:opacity-50 text-sm"
-                            placeholder="name@company.com"
-                        />
-                    </div>
+                    <fieldset disabled={isLoading} className={`space-y-5 transition-opacity duration-200 ${isLoading ? 'opacity-50' : 'opacity-100'}`}>
+                        <div className="space-y-1.5">
+                            <label
+                                htmlFor="email"
+                                className="block text-sm font-medium text-gray-700"
+                            >
+                                Email address
+                            </label>
+                            <input
+                                id="email"
+                                name="email"
+                                type="email"
+                                autoComplete="email"
+                                required
+                                className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-black focus:border-black transition-colors disabled:cursor-not-allowed text-sm"
+                                placeholder="name@company.com"
+                            />
+                        </div>
 
-                    <div className="space-y-1.5">
-                        <label
-                            htmlFor="password"
-                            className="block text-sm font-medium text-gray-700"
-                        >
-                            Password
-                        </label>
-                        <input
-                            id="password"
-                            name="password"
-                            type="password"
-                            autoComplete="current-password"
-                            required
-                            disabled={isLoading}
-                            className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-black focus:border-black transition-colors disabled:opacity-50 text-sm"
-                            placeholder="••••••••"
-                        />
-                    </div>
+                        <div className="space-y-1.5">
+                            <label
+                                htmlFor="password"
+                                className="block text-sm font-medium text-gray-700"
+                            >
+                                Password
+                            </label>
+                            <input
+                                id="password"
+                                name="password"
+                                type="password"
+                                autoComplete="current-password"
+                                required
+                                className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-black focus:border-black transition-colors disabled:cursor-not-allowed text-sm"
+                                placeholder="••••••••"
+                            />
+                        </div>
+                    </fieldset>
 
                     <button
                         type="submit"
                         disabled={isLoading}
-                        className="w-full py-2.5 px-4 bg-black text-white font-medium rounded-md hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-900 transition-all disabled:opacity-70 disabled:cursor-not-allowed text-sm flex items-center justify-center gap-2"
+                        className="w-full py-2.5 px-4 bg-black text-white font-medium rounded-md hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-900 transition-all disabled:opacity-80 disabled:cursor-not-allowed text-sm flex items-center justify-center gap-2"
                     >
                         {isLoading ? (
                             <>
                                 <Loader2 className="h-4 w-4 animate-spin" />
-                                Signing in...
+                                Verifying credentials...
                             </>
                         ) : (
                             'Sign in'

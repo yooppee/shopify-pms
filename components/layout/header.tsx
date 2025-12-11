@@ -26,21 +26,18 @@ export function Header() {
         await logout()
     }
 
-    if (isLoading) {
-        return (
-            <header className="h-14 border-b bg-white flex items-center justify-end px-6">
-                <div className="animate-pulse bg-slate-200 h-4 w-32 rounded"></div>
-            </header>
-        )
-    }
-
     return (
         <header className="h-14 border-b bg-white flex items-center justify-between px-6">
             <div className="flex items-center gap-2">
                 <h1 className="text-lg font-semibold text-slate-800">Shopify PMS</h1>
             </div>
 
-            {userEmail && (
+            {isLoading ? (
+                <div className="flex items-center gap-4">
+                    <div className="animate-pulse bg-slate-100 h-4 w-32 rounded"></div>
+                    <div className="animate-pulse bg-slate-100 h-8 w-20 rounded"></div>
+                </div>
+            ) : userEmail ? (
                 <div className="flex items-center gap-4">
                     <div className="flex items-center gap-2 text-sm text-slate-600">
                         <User className="h-4 w-4" />
@@ -56,7 +53,7 @@ export function Header() {
                         登出
                     </Button>
                 </div>
-            )}
+            ) : null}
         </header>
     )
 }
