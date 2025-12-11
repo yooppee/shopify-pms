@@ -1976,6 +1976,11 @@ export function InventoryDataTable({
                                                     )}
                                                 {header.column.getCanResize() && (
                                                     <div
+                                                        draggable={false}
+                                                        onDragStart={(e) => {
+                                                            e.preventDefault()
+                                                            e.stopPropagation()
+                                                        }}
                                                         onMouseDown={header.getResizeHandler()}
                                                         onTouchStart={header.getResizeHandler()}
                                                         className={`absolute right-0 top-0 h-full w-1 cursor-col-resize select-none touch-none ${header.column.getIsResizing()
