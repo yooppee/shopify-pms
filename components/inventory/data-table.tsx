@@ -1959,28 +1959,26 @@ export function InventoryDataTable({
                                         return (
                                             <th
                                                 key={header.id}
-                                                draggable={!isFixedColumn && !header.isPlaceholder}
-                                                onDragStart={(e) => !isFixedColumn && handleDragStart(e, header.column.id)}
                                                 onDragOver={handleDragOver}
                                                 onDrop={(e) => !isFixedColumn && handleDrop(e, header.column.id, allColumnIds)}
-                                                onDragEnd={handleDragEnd}
-                                                className={`px-4 py-3 text-left font-medium text-foreground bg-background whitespace-nowrap relative transition-opacity ${isDragging ? 'opacity-50' : ''
-                                                    } ${!isFixedColumn && !header.isPlaceholder ? 'cursor-grab active:cursor-grabbing' : ''}`}
+                                                className={`px-4 py-3 text-left font-medium text-foreground bg-background whitespace-nowrap relative transition-opacity ${isDragging ? 'opacity-50' : ''}`}
                                                 style={{ width: header.getSize() }}
                                             >
-                                                {header.isPlaceholder
-                                                    ? null
-                                                    : flexRender(
-                                                        header.column.columnDef.header,
-                                                        header.getContext()
-                                                    )}
+                                                <span
+                                                    draggable={!isFixedColumn && !header.isPlaceholder}
+                                                    onDragStart={(e) => !isFixedColumn && handleDragStart(e, header.column.id)}
+                                                    onDragEnd={handleDragEnd}
+                                                    className={`${!isFixedColumn && !header.isPlaceholder ? 'cursor-grab active:cursor-grabbing' : ''}`}
+                                                >
+                                                    {header.isPlaceholder
+                                                        ? null
+                                                        : flexRender(
+                                                            header.column.columnDef.header,
+                                                            header.getContext()
+                                                        )}
+                                                </span>
                                                 {header.column.getCanResize() && (
                                                     <div
-                                                        draggable={false}
-                                                        onDragStart={(e) => {
-                                                            e.preventDefault()
-                                                            e.stopPropagation()
-                                                        }}
                                                         onMouseDown={header.getResizeHandler()}
                                                         onTouchStart={header.getResizeHandler()}
                                                         className={`absolute right-0 top-0 h-full w-1 cursor-col-resize select-none touch-none ${header.column.getIsResizing()
