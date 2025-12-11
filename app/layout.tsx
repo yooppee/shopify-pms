@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import { Inter, JetBrains_Mono } from "next/font/google"
 import { QueryProvider } from "./query-provider"
 import { Toaster } from "react-hot-toast"
+import { SidebarProvider } from "@/components/providers/sidebar-provider"
 import "./globals.css"
 
 const inter = Inter({
@@ -28,7 +29,9 @@ export default function RootLayout({
         <html lang="en">
             <body className={`${inter.variable} ${jetbrainsMono.variable} font-sans`}>
                 <QueryProvider>
-                    {children}
+                    <SidebarProvider>
+                        {children}
+                    </SidebarProvider>
                 </QueryProvider>
                 <Toaster position="top-right" />
             </body>
