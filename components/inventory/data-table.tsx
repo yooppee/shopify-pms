@@ -1951,8 +1951,12 @@ export function InventoryDataTable({
                       border-b transition-colors
                       ${row.original.is_deleted ? 'bg-red-50/50 hover:bg-red-100/50 opacity-70' : ''}
                       ${pendingDeletions.has(row.original.id!) ? 'bg-red-50 hover:bg-red-100 line-through' : ''}
-                      ${!row.original.is_deleted && !pendingDeletions.has(row.original.id!) && (row.original.has_changes ? 'bg-green-50' : row.original.is_spu ? 'bg-background hover:bg-muted/50' : 'bg-muted/10 hover:bg-muted/30')}
-                      ${!row.original.is_deleted && !pendingDeletions.has(row.original.id!) && (row.original.has_changes ? 'hover:bg-green-100' : row.original.is_spu ? 'hover:bg-muted/50' : 'hover:bg-muted/30')}
+                      ${!row.original.is_deleted && !pendingDeletions.has(row.original.id!) && (
+                                                row.original.has_changes ? 'bg-green-50 hover:bg-green-100' :
+                                                    ((row.original.is_spu && row.getIsExpanded()) || (!row.original.is_spu && row.depth > 0)) ? 'bg-blue-50/50 hover:bg-blue-100/50' :
+                                                        row.original.is_spu ? 'bg-background hover:bg-muted/50' :
+                                                            'bg-muted/10 hover:bg-muted/30'
+                                            )}
                       font-medium
                     `}
                                     >
