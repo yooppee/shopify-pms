@@ -4,23 +4,19 @@ import React, { useState, useEffect } from 'react'
 import { Input } from '@/components/ui/input'
 
 interface EditableCellProps {
-    productId: string
-    variantId: number
-    field: string
     value: any
     format?: 'currency' | 'text' | 'number'
     tooltip?: string
-    onUpdate: (variantId: number, field: string, value: any) => void
+    onCommit: (value: any) => void
+    className?: string
 }
 
 export function EditableCell({
-    productId,
-    variantId,
-    field,
     value,
     format = 'text',
     tooltip = 'Click to edit',
-    onUpdate
+    onCommit,
+    className
 }: EditableCellProps) {
     const [isEditing, setIsEditing] = useState(false)
     const [editValue, setEditValue] = useState(value?.toString() || '')
@@ -42,7 +38,7 @@ export function EditableCell({
         if (parsedValue === originalValue) return
 
         // Update local state only - no database save
-        onUpdate(variantId, field, parsedValue)
+        onCommit(parsedValue)
     }
 
     const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -81,7 +77,7 @@ export function EditableCell({
 
     return (
         <div
-            className="cell-editable h-8 px-2 py-1 font-mono text-xs text-foreground cursor-text hover:bg-muted/50 rounded transition-colors flex items-center"
+            className={`cell-editable h-8 px-2 py-1 font-mono text-xs text-foreground cursor-text hover:bg-muted/50 rounded transition-colors flex items-center ${className || ''}`}
             onClick={() => setIsEditing(true)}
             title={tooltip}
         >

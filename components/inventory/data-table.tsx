@@ -35,6 +35,14 @@ import {
     DropdownMenuCheckboxItem,
     DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu'
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogHeader,
+    DialogTitle,
+    DialogTrigger,
+} from "@/components/ui/dialog"
 
 // 扩展类型以支持层级结�?
 interface ProductNode extends Partial<ProductWithCalculations> {
@@ -100,6 +108,21 @@ export function InventoryDataTable({
     const [pendingDeletions, setPendingDeletions] = useState<Set<string>>(new Set())
     const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({})
     const [showDiscardConfirm, setShowDiscardConfirm] = useState(false)
+    const [overwriteDialog, setOverwriteDialog] = useState<{
+        isOpen: boolean
+        spuId: number
+        field: string
+        value: any
+        conflictingCount: number
+        totalCount: number
+    }>({
+        isOpen: false,
+        spuId: 0,
+        field: '',
+        value: null,
+        conflictingCount: 0,
+        totalCount: 0
+    })
     const [columnOrder, setColumnOrder] = useState<ColumnOrderState>(() => {
         if (typeof window !== 'undefined') {
             const saved = localStorage.getItem('inventory-column-order')
@@ -250,6 +273,87 @@ export function InventoryDataTable({
             return newChanges
         })
     }, [])
+
+    // 处理 SPU 级别的更新 (带级联逻辑)
+    const handleSPUUpdate = useCallback((spuId: number, field: string, value: any) => {
+        // 找到该 SPU 下的所有 variants
+        const variants = localProducts.filter(p => p.shopify_product_id === spuId)
+        if (variants.length === 0) return
+
+        // 检查是否有由于已有值而产生的冲突 (非空且不等于新值)
+        const conflictingVariants = variants.filter(v => {
+            const currentValue = v.internal_meta?.[field]
+            // 如果当前值为空，不算冲突
+            if (currentValue === null || currentValue === undefined || currentValue === '') return false
+            // 如果当前值等于新值，不算冲突
+            return currentValue !== value
+        })
+
+        if (conflictingVariants.length > 0) {
+            // 打开覆盖确认弹窗
+            setOverwriteDialog({
+                isOpen: true,
+                spuId,
+                field,
+                value,
+                conflictingCount: conflictingVariants.length,
+                totalCount: variants.length
+            })
+        } else {
+            // 没有冲突，直接应用到所有 variants
+            applySPUUpdate(spuId, field, value, 'overwrite')
+        }
+    }, [localProducts])
+
+    // 执行 SPU 更新应用
+    const applySPUUpdate = useCallback((spuId: number, field: string, value: any, mode: 'overwrite' | 'fill-empty') => {
+        const now = new Date().toISOString()
+        const variantsToUpdate = localProducts.filter(p => p.shopify_product_id === spuId)
+
+        // 更新本地状态
+        setLocalProducts(prev => prev.map(product => {
+            if (product.shopify_product_id !== spuId) return product
+
+            // 检查是否需要更新该 variant
+            const currentValue = product.internal_meta?.[field]
+            const isEmpty = currentValue === null || currentValue === undefined || currentValue === ''
+
+            // 如果是 "fill-empty" 模式且当前非空，则跳过
+            if (mode === 'fill-empty' && !isEmpty) return product
+
+            const updatedMeta: Record<string, any> = {
+                ...product.internal_meta,
+                [field]: value
+            }
+
+            return {
+                ...product,
+                internal_meta: updatedMeta
+            }
+        }))
+
+        // 记录待保存的更改
+        setPendingChanges(prev => {
+            const newChanges = new Map(prev)
+            variantsToUpdate.forEach(variant => {
+                const currentValue = variant.internal_meta?.[field]
+                const isEmpty = currentValue === null || currentValue === undefined || currentValue === ''
+
+                if (mode === 'fill-empty' && !isEmpty) return
+
+                const changeKey = `${variant.variant_id}-${field}`
+                newChanges.set(changeKey, {
+                    variantId: variant.variant_id,
+                    field,
+                    value
+                })
+            })
+            return newChanges
+        })
+
+        // 关闭弹窗
+        setOverwriteDialog(prev => ({ ...prev, isOpen: false }))
+    }, [localProducts])
 
     // 批量保存所有待保存的更�?
     const handleSave = async () => {
@@ -1379,12 +1483,9 @@ export function InventoryDataTable({
 
                 return (
                     <EditableCell
-                        productId={variant.id!}
-                        variantId={variant.variant_id!}
-                        field="manual_inventory"
                         value={currentInventory}
                         tooltip={tooltipText}
-                        onUpdate={handleUpdate}
+                        onCommit={(val) => handleUpdate(variant.variant_id!, 'manual_inventory', val)}
                     />
                 )
             },
@@ -1409,12 +1510,9 @@ export function InventoryDataTable({
                 if (!variant) return <span className="text-foreground">-</span>
                 return (
                     <EditableCell
-                        productId={variant.id!}
-                        variantId={variant.variant_id!}
-                        field="cost_price"
                         value={variant.internal_meta?.cost_price}
                         format="currency"
-                        onUpdate={handleUpdate}
+                        onCommit={(val) => handleUpdate(variant.variant_id!, 'cost_price', val)}
                     />
                 )
             },
@@ -1468,11 +1566,8 @@ export function InventoryDataTable({
                 if (!variant) return <span className="text-foreground">-</span>
                 return (
                     <EditableCell
-                        productId={variant.id!}
-                        variantId={variant.variant_id!}
-                        field="notes"
                         value={variant.internal_meta?.notes}
-                        onUpdate={handleUpdate}
+                        onCommit={(val) => handleUpdate(variant.variant_id!, 'notes', val)}
                     />
                 )
             },
@@ -1552,17 +1647,28 @@ export function InventoryDataTable({
             size: 120,
             cell: ({ row }) => {
                 if (row.original.is_spu && (row.original.subRows?.length || 0) > 1) {
-                    return <span className="text-foreground">-</span>
+                    // SPU row editing (Mass update)
+                    // Get common value if all are same, else show placeholder or mixed
+                    const subRows = row.original.subRows || []
+                    const firstVal = subRows[0]?.internal_meta?.vendor
+                    const allSame = subRows.every(v => v.internal_meta?.vendor === firstVal)
+                    const displayValue = allSame ? firstVal : '' // If mixed, show empty? Or show first? User said "allow modification"
+
+                    return (
+                        <EditableCell
+                            value={displayValue}
+                            tooltip={allSame ? "Edit Vendor for all variants" : "Mixed Vendors - Edit to overwrite all"}
+                            onCommit={(val) => handleSPUUpdate(row.original.shopify_product_id!, 'vendor', val)}
+                            className={!allSame ? "italic placeholder:text-muted-foreground" : ""}
+                        />
+                    )
                 }
                 const variant = row.original.is_spu ? row.original.subRows?.[0] : row.original
                 if (!variant) return <span className="text-foreground">-</span>
                 return (
                     <EditableCell
-                        productId={variant.id!}
-                        variantId={variant.variant_id!}
-                        field="vendor"
                         value={variant.internal_meta?.vendor}
-                        onUpdate={handleUpdate}
+                        onCommit={(val) => handleUpdate(variant.variant_id!, 'vendor', val)}
                     />
                 )
             },
@@ -1574,18 +1680,28 @@ export function InventoryDataTable({
             size: 150,
             cell: ({ row }) => {
                 if (row.original.is_spu && (row.original.subRows?.length || 0) > 1) {
-                    return <span className="text-foreground">-</span>
+                    // SPU row editing (Mass update)
+                    const subRows = row.original.subRows || []
+                    const firstVal = subRows[0]?.internal_meta?.purchase_link
+                    const allSame = subRows.every(v => v.internal_meta?.purchase_link === firstVal)
+                    const displayValue = allSame ? firstVal : ''
+
+                    return (
+                        <EditableCell
+                            value={displayValue}
+                            tooltip={allSame ? "Edit Link for all variants" : "Mixed Links - Edit to overwrite all"}
+                            onCommit={(val) => handleSPUUpdate(row.original.shopify_product_id!, 'purchase_link', val)}
+                            className={!allSame ? "italic placeholder:text-muted-foreground" : ""}
+                        />
+                    )
                 }
                 const variant = row.original.is_spu ? row.original.subRows?.[0] : row.original
                 if (!variant) return <span className="text-foreground">-</span>
 
                 return (
                     <EditableCell
-                        productId={variant.id!}
-                        variantId={variant.variant_id!}
-                        field="purchase_link"
                         value={variant.internal_meta?.purchase_link}
-                        onUpdate={handleUpdate}
+                        onCommit={(val) => handleUpdate(variant.variant_id!, 'purchase_link', val)}
                     />
                 )
             },
@@ -1889,6 +2005,32 @@ export function InventoryDataTable({
                 )}
             </div>
 
+            <Dialog open={overwriteDialog.isOpen} onOpenChange={(open) => !open && setOverwriteDialog(prev => ({ ...prev, isOpen: false }))}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Data Conflict Detected</DialogTitle>
+                        <DialogDescription>
+                            You are updating {overwriteDialog.conflictingCount} out of {overwriteDialog.totalCount} variants that already have data.
+                            <br />
+                            Do you want to overwrite all existing values or only fill empty ones?
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="flex justify-end gap-3 mt-4">
+                        <Button
+                            variant="secondary"
+                            onClick={() => applySPUUpdate(overwriteDialog.spuId, overwriteDialog.field, overwriteDialog.value, 'fill-empty')}
+                        >
+                            Keep Existing (Fill Empty)
+                        </Button>
+                        <Button
+                            variant="default"
+                            onClick={() => applySPUUpdate(overwriteDialog.spuId, overwriteDialog.field, overwriteDialog.value, 'overwrite')}
+                        >
+                            Overwrite All
+                        </Button>
+                    </div>
+                </DialogContent>
+            </Dialog>
         </div>
     )
 }
