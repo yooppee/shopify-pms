@@ -931,7 +931,7 @@ export function InventoryDataTable({
         },
         {
             id: 'image',
-            header: () => <span className="text-foreground">Image</span>,
+            header: () => <span className="text-foreground">Image*</span>,
             size: 50,
             enableResizing: false,
             cell: ({ row }) => {
@@ -1024,7 +1024,7 @@ export function InventoryDataTable({
         {
             id: 'title',
             accessorKey: 'title',
-            header: () => <span className="text-foreground">Product / Variant</span>,
+            header: () => <span className="text-foreground">Product / Variant*</span>,
             size: 350,
             cell: ({ row }) => {
                 // Get landing page URL - use first variant's URL for SPU
@@ -1181,7 +1181,7 @@ export function InventoryDataTable({
         },
         {
             id: 'price',
-            header: () => <span className="text-foreground">Price</span>,
+            header: () => <span className="text-foreground">Price*</span>,
             size: 90,
             cell: ({ row }) => {
                 const syncVariant = row.original.sync_product
@@ -1240,7 +1240,7 @@ export function InventoryDataTable({
         },
         {
             id: 'compare_at_price',
-            header: 'Compare At',
+            header: () => <span className="text-foreground">Compare At*</span>,
             size: 90,
             cell: ({ row }) => {
                 const syncVariant = row.original.sync_product
@@ -1480,7 +1480,7 @@ export function InventoryDataTable({
 
         {
             id: 'created_at',
-            header: () => <span className="text-foreground">Created At</span>,
+            header: () => <span className="text-foreground">Created At*</span>,
             size: 140,
             cell: ({ row }) => {
                 const variant = row.original.is_spu ? row.original.subRows?.[0] : row.original
@@ -1592,7 +1592,7 @@ export function InventoryDataTable({
         },
         {
             id: 'weight',
-            header: () => <span className="text-foreground">Weight(g)</span>,
+            header: () => <span className="text-foreground">Weight(g)*</span>,
             size: 80,
             cell: ({ row }) => {
                 const variant = row.original.is_spu ? row.original.subRows?.[0] : row.original
@@ -1825,6 +1825,12 @@ export function InventoryDataTable({
                                 table.getRowModel().rows.map((row) => (
                                     <tr
                                         key={row.id}
+                                        onDoubleClick={() => {
+                                            // Toggle expand/collapse on double-click for SPU rows with multiple variants
+                                            if (row.original.is_spu && (row.original.subRows?.length || 0) > 1) {
+                                                row.toggleExpanded()
+                                            }
+                                        }}
                                         className={`
                       border-b transition-colors
                       ${row.original.is_deleted ? 'bg-red-50/50 hover:bg-red-100/50 opacity-70' : ''}

@@ -1,6 +1,7 @@
 'use client'
 
 import { Sidebar } from '@/components/layout/sidebar'
+import { Header } from '@/components/layout/header'
 import { InventoryDataTable } from '@/components/inventory/data-table'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
@@ -185,143 +186,146 @@ export default function InventoryPage() {
     return (
         <div className="flex h-screen">
             <Sidebar />
-            <main className="flex-1 overflow-auto">
-                <div className="p-4">
-                    {/* Header */}
-                    <div className="flex items-center justify-between mb-4">
-                        <div>
-                            <h1 className="text-2xl font-bold">Inventory Management</h1>
-                            <p className="text-sm text-muted-foreground">
-                                {pendingSyncData ? (
-                                    <>
-                                        <span className="text-orange-500 font-medium">Sync Preview: </span>
-                                        {new Set(pendingSyncData.map((p: { shopify_product_id: number }) => p.shopify_product_id)).size} SPUs, {pendingSyncData.length} Variants
-                                    </>
-                                ) : pendingWeightData ? (
-                                    <>
-                                        <span className="text-green-600 font-medium">Weight Update Preview: </span>
-                                        {pendingWeightData.filter((p: any) => p.weight !== p.shopify_weight).length} products with changes
-                                    </>
-                                ) : products.length > 0 ? (
-                                    <>
-                                        {new Set(products.map((p: { shopify_product_id: number }) => p.shopify_product_id)).size} SPUs, {products.length} Variants
-                                    </>
-                                ) : (
-                                    'Manage product costs, inventory, and internal data'
-                                )}
-                            </p>
+            <div className="flex-1 flex flex-col overflow-hidden">
+                <Header />
+                <main className="flex-1 overflow-auto">
+                    <div className="p-4">
+                        {/* Header */}
+                        <div className="flex items-center justify-between mb-4">
+                            <div>
+                                <h1 className="text-2xl font-bold">Inventory Management</h1>
+                                <p className="text-sm text-muted-foreground">
+                                    {pendingSyncData ? (
+                                        <>
+                                            <span className="text-orange-500 font-medium">Sync Preview: </span>
+                                            {new Set(pendingSyncData.map((p: { shopify_product_id: number }) => p.shopify_product_id)).size} SPUs, {pendingSyncData.length} Variants
+                                        </>
+                                    ) : pendingWeightData ? (
+                                        <>
+                                            <span className="text-green-600 font-medium">Weight Update Preview: </span>
+                                            {pendingWeightData.filter((p: any) => p.weight !== p.shopify_weight).length} products with changes
+                                        </>
+                                    ) : products.length > 0 ? (
+                                        <>
+                                            {new Set(products.map((p: { shopify_product_id: number }) => p.shopify_product_id)).size} SPUs, {products.length} Variants
+                                        </>
+                                    ) : (
+                                        'Manage product costs, inventory, and internal data'
+                                    )}
+                                </p>
+                            </div>
+                            <div className="flex gap-2">
+                                <Button
+                                    onClick={() => setImportDialogOpen(true)}
+                                    variant="outline"
+                                    disabled={isLoading || isLoadingWeight || isLoadingPreview}
+                                >
+                                    <FileSpreadsheet className="mr-2 h-4 w-4" />
+                                    Import Excel
+                                </Button>
+                                <Button
+                                    onClick={handleWeightUpdate}
+                                    disabled={isLoadingWeight || weightMutation.isPending || isLoadingPreview || syncMutation.isPending}
+                                    variant="outline"
+                                >
+                                    <Scale className={`mr-2 h-4 w-4 ${isLoadingWeight ? 'animate-spin' : ''}`} />
+                                    {isLoadingWeight ? 'Updating...' : 'Update Weight'}
+                                </Button>
+                                <Button
+                                    onClick={handleSyncPreview}
+                                    disabled={isLoadingPreview || syncMutation.isPending || isLoadingWeight || weightMutation.isPending}
+                                    variant="outline"
+                                >
+                                    <RefreshCw className={`mr-2 h-4 w-4 ${isLoadingPreview ? 'animate-spin' : ''}`} />
+                                    {isLoadingPreview ? 'Loading...' : 'Sync from Shopify'}
+                                </Button>
+                            </div>
                         </div>
-                        <div className="flex gap-2">
-                            <Button
-                                onClick={() => setImportDialogOpen(true)}
-                                variant="outline"
-                                disabled={isLoading || isLoadingWeight || isLoadingPreview}
-                            >
-                                <FileSpreadsheet className="mr-2 h-4 w-4" />
-                                Import Excel
-                            </Button>
-                            <Button
-                                onClick={handleWeightUpdate}
-                                disabled={isLoadingWeight || weightMutation.isPending || isLoadingPreview || syncMutation.isPending}
-                                variant="outline"
-                            >
-                                <Scale className={`mr-2 h-4 w-4 ${isLoadingWeight ? 'animate-spin' : ''}`} />
-                                {isLoadingWeight ? 'Updating...' : 'Update Weight'}
-                            </Button>
-                            <Button
-                                onClick={handleSyncPreview}
-                                disabled={isLoadingPreview || syncMutation.isPending || isLoadingWeight || weightMutation.isPending}
-                                variant="outline"
-                            >
-                                <RefreshCw className={`mr-2 h-4 w-4 ${isLoadingPreview ? 'animate-spin' : ''}`} />
-                                {isLoadingPreview ? 'Loading...' : 'Sync from Shopify'}
-                            </Button>
-                        </div>
+
+                        {/* Content */}
+                        {isLoading ? (
+                            <div className="flex items-center justify-center h-64">
+                                <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
+                            </div>
+                        ) : error ? (
+                            <div className="text-center text-destructive">
+                                Failed to load products. Please try again.
+                            </div>
+                        ) : (
+                            <InventoryDataTable
+                                products={products}
+                                pendingSyncData={pendingSyncData}
+                                pendingWeightData={pendingWeightData}
+                                onSaveSync={handleSaveSync}
+                                onDiscardSync={handleDiscardSync}
+                                onSaveWeight={handleSaveWeight}
+                                onDiscardWeight={handleDiscardWeight}
+                                isSyncing={syncMutation.isPending}
+                                isUpdatingWeight={weightMutation.isPending}
+                                onRefresh={() => queryClient.invalidateQueries({ queryKey: ['products'] })}
+                            />
+                        )}
                     </div>
 
-                    {/* Content */}
-                    {isLoading ? (
-                        <div className="flex items-center justify-center h-64">
-                            <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
-                        </div>
-                    ) : error ? (
-                        <div className="text-center text-destructive">
-                            Failed to load products. Please try again.
-                        </div>
-                    ) : (
-                        <InventoryDataTable
-                            products={products}
-                            pendingSyncData={pendingSyncData}
-                            pendingWeightData={pendingWeightData}
-                            onSaveSync={handleSaveSync}
-                            onDiscardSync={handleDiscardSync}
-                            onSaveWeight={handleSaveWeight}
-                            onDiscardWeight={handleDiscardWeight}
-                            isSyncing={syncMutation.isPending}
-                            isUpdatingWeight={weightMutation.isPending}
-                            onRefresh={() => queryClient.invalidateQueries({ queryKey: ['products'] })}
-                        />
-                    )}
-                </div>
+                    {/* Import Dialog */}
+                    <ImportDialog
+                        open={importDialogOpen}
+                        onOpenChange={setImportDialogOpen}
+                        onSuccess={() => {
+                            setImportDialogOpen(false)
+                            queryClient.invalidateQueries({ queryKey: ['products'] })
+                        }}
+                    />
 
-                {/* Import Dialog */}
-                <ImportDialog
-                    open={importDialogOpen}
-                    onOpenChange={setImportDialogOpen}
-                    onSuccess={() => {
-                        setImportDialogOpen(false)
-                        queryClient.invalidateQueries({ queryKey: ['products'] })
-                    }}
-                />
+                    {/* Weight Update Mode Selection Dialog */}
+                    <Dialog open={showModeDialog} onOpenChange={setShowModeDialog}>
+                        <DialogContent className="sm:max-w-md">
+                            <DialogHeader>
+                                <DialogTitle>选择更新模式</DialogTitle>
+                                <DialogDescription>
+                                    选择如何更新产品重量数据
+                                </DialogDescription>
+                            </DialogHeader>
 
-                {/* Weight Update Mode Selection Dialog */}
-                <Dialog open={showModeDialog} onOpenChange={setShowModeDialog}>
-                    <DialogContent className="sm:max-w-md">
-                        <DialogHeader>
-                            <DialogTitle>选择更新模式</DialogTitle>
-                            <DialogDescription>
-                                选择如何更新产品重量数据
-                            </DialogDescription>
-                        </DialogHeader>
+                            <div className="space-y-3 py-4">
+                                {/* Option 1: Only Empty Values */}
+                                <Button
+                                    onClick={() => executeWeightUpdate('empty')}
+                                    className="w-full justify-start h-auto p-4 text-left"
+                                    variant="outline"
+                                >
+                                    <div className="flex-1">
+                                        <div className="font-semibold flex items-center gap-2 mb-1">
+                                            <Scale className="h-4 w-4" />
+                                            仅更新空值
+                                        </div>
+                                        <div className="text-sm text-muted-foreground font-normal">
+                                            只检查当前 weight 为空的产品，速度快（推荐用于日常维护）
+                                        </div>
+                                    </div>
+                                </Button>
 
-                        <div className="space-y-3 py-4">
-                            {/* Option 1: Only Empty Values */}
-                            <Button
-                                onClick={() => executeWeightUpdate('empty')}
-                                className="w-full justify-start h-auto p-4 text-left"
-                                variant="outline"
-                            >
-                                <div className="flex-1">
-                                    <div className="font-semibold flex items-center gap-2 mb-1">
-                                        <Scale className="h-4 w-4" />
-                                        仅更新空值
+                                {/* Option 2: Check All Changes */}
+                                <Button
+                                    onClick={() => executeWeightUpdate('all')}
+                                    className="w-full justify-start h-auto p-4 text-left"
+                                    variant="outline"
+                                >
+                                    <div className="flex-1">
+                                        <div className="font-semibold flex items-center gap-2 mb-1">
+                                            <RefreshCw className="h-4 w-4" />
+                                            检查所有变动
+                                        </div>
+                                        <div className="text-sm text-muted-foreground font-normal">
+                                            检查所有产品的 weight 变化，耗时较长（完整同步）
+                                        </div>
                                     </div>
-                                    <div className="text-sm text-muted-foreground font-normal">
-                                        只检查当前 weight 为空的产品，速度快（推荐用于日常维护）
-                                    </div>
-                                </div>
-                            </Button>
-
-                            {/* Option 2: Check All Changes */}
-                            <Button
-                                onClick={() => executeWeightUpdate('all')}
-                                className="w-full justify-start h-auto p-4 text-left"
-                                variant="outline"
-                            >
-                                <div className="flex-1">
-                                    <div className="font-semibold flex items-center gap-2 mb-1">
-                                        <RefreshCw className="h-4 w-4" />
-                                        检查所有变动
-                                    </div>
-                                    <div className="text-sm text-muted-foreground font-normal">
-                                        检查所有产品的 weight 变化，耗时较长（完整同步）
-                                    </div>
-                                </div>
-                            </Button>
-                        </div>
-                    </DialogContent>
-                </Dialog>
-            </main>
+                                </Button>
+                            </div>
+                        </DialogContent>
+                    </Dialog>
+                </main>
+            </div>
         </div>
     )
 }
