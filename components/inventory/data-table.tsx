@@ -1412,6 +1412,60 @@ export function InventoryDataTable({
             },
         },
         {
+            id: 'discount',
+            header: () => <span className="text-foreground">Discount %</span>,
+            size: 90,
+            cell: ({ row }) => {
+                const calculateDiscountPercent = (price: number, compareAt: number | null | undefined): number | null => {
+                    // If compareAt is not present/valid, return null (renders as '-')
+                    if (compareAt === null || compareAt === undefined || compareAt === 0) return null
+
+                    // If compareAt exists, return the percentage (can be 0)
+                    return Math.round(((compareAt - price) / compareAt) * 100)
+                }
+
+                if (row.original.is_spu && (row.original.subRows?.length || 0) > 1) {
+                    // Calculate discount range for SPU
+                    // Filter out nulls (no compareAt) but KEEP 0s (explicit 0% discount)
+                    const discounts = row.original.subRows!
+                        .map(v => calculateDiscountPercent(Number(v.price), v.compare_at_price))
+                        .filter((d): d is number => d !== null)
+
+                    if (discounts.length === 0) return <span className="font-mono text-xs">-</span>
+
+                    const minDiscount = Math.min(...discounts)
+                    const maxDiscount = Math.max(...discounts)
+
+                    if (minDiscount === maxDiscount) {
+                        return (
+                            <span className={`font-mono text-xs font-bold ${minDiscount > 0 ? 'text-red-600' : 'text-foreground'}`}>
+                                {minDiscount > 0 ? `-${minDiscount}%` : `${minDiscount}%`}
+                            </span>
+                        )
+                    }
+                    return (
+                        <span className="font-mono text-xs text-red-600 font-bold">
+                            {minDiscount > 0 ? `-${minDiscount}%` : `${minDiscount}%`} ~ {maxDiscount > 0 ? `-${maxDiscount}%` : `${maxDiscount}%`}
+                        </span>
+                    )
+                }
+
+                // Single variant or SPU with one variant
+                const variant = row.original.is_spu ? row.original.subRows?.[0] : row.original
+                if (!variant) return <span className="font-mono text-xs">-</span>
+
+                const discount = calculateDiscountPercent(Number(variant.price), variant.compare_at_price)
+
+                if (discount === null) return <span className="font-mono text-xs">-</span>
+
+                return (
+                    <span className={`font-mono text-xs font-bold ${discount > 0 ? 'text-red-600' : 'text-foreground'}`}>
+                        {discount > 0 ? `-${discount}%` : `${discount}%`}
+                    </span>
+                )
+            },
+        },
+        {
             id: 'inventory',
             header: () => <span className="text-foreground">Inventory</span>,
             size: 80,
