@@ -18,6 +18,10 @@ const jetbrainsMono = JetBrains_Mono({
 export const metadata: Metadata = {
     title: "Shopify PMS - Product Management System",
     description: "E-commerce Product Management System with Analytics",
+    robots: {
+        index: false,
+        follow: false,
+    },
 }
 
 export default function RootLayout({
