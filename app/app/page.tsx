@@ -129,7 +129,7 @@ function AppStatus() {
                         <input
                             className="flex h-9 w-full rounded-md border border-input bg-white px-3 py-1 text-sm shadow-sm"
                             name="shop"
-                            placeholder="yooppe.myshopify.com"
+                            placeholder="yooppee.myshopify.com"
                             required
                         />
                         <Button type="submit" variant="outline" className="w-full bg-white hover:bg-gray-100">
