@@ -125,7 +125,7 @@ function AppStatus() {
                     <p className="text-xs text-center text-muted-foreground mb-3">
                         Need to (re)install?
                     </p>
-                    <form action="/api/auth/login" method="GET" className="space-y-2">
+                    <form action="/api/auth" method="GET" className="space-y-2">
                         <input
                             className="flex h-9 w-full rounded-md border border-input bg-white px-3 py-1 text-sm shadow-sm"
                             name="shop"
