@@ -22,13 +22,23 @@ export async function GET() {
     try {
         const supabase = createServiceRoleClient()
 
-        // 1. Check DB for credentials
+        // 1. Check DB for credentials (get the latest one)
         const { data: credentials, error: dbError } = await supabase
             .from('shop_credentials')
             .select('*')
-            .single()
+            .order('updated_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
 
-        if (dbError || !credentials) {
+        if (dbError) {
+            console.error('Database error checking status:', dbError)
+            return NextResponse.json({
+                authenticated: false,
+                error: `Database error: ${dbError.message}`
+            })
+        }
+
+        if (!credentials) {
             return NextResponse.json({
                 authenticated: false,
                 error: 'No shop credentials found in database.'
