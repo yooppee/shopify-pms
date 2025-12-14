@@ -5,7 +5,7 @@ import { Header } from '@/components/layout/header'
 import { InventoryDataTable } from '@/components/inventory/data-table'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
-import { RefreshCw, Scale, FileSpreadsheet } from 'lucide-react'
+import { RefreshCw, Scale, FileSpreadsheet, ShoppingBag } from 'lucide-react'
 import { ImportDialog } from '@/components/inventory/import-dialog'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
@@ -41,6 +41,15 @@ async function fetchWeightData(mode: 'empty' | 'all' = 'all') {
 async function updateWeights(mode: 'empty' | 'all' = 'all') {
     const response = await fetch(`/api/weight-sync?mode=${mode}`, { method: 'POST' })
     if (!response.ok) throw new Error('Failed to update weights')
+    return response.json()
+}
+
+async function syncOrders() {
+    const response = await fetch('/api/orders-sync', { method: 'POST' })
+    if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.error || 'Failed to sync orders')
+    }
     return response.json()
 }
 
@@ -124,6 +133,25 @@ export default function InventoryPage() {
         onError: (error) => {
             console.error('❌ Weight update failed:', error)
             toast.error('Failed to update weights. Please try again.', {
+                duration: 5000,
+                icon: '❌',
+            })
+        },
+    })
+
+    // Order sync mutation
+    const syncOrderMutation = useMutation({
+        mutationFn: syncOrders,
+        onSuccess: async (data: any) => {
+            console.log('✅ Order sync successful:', data)
+            toast.success(data.message || 'Orders synced successfully!', {
+                duration: 4000,
+                icon: '✅',
+            })
+        },
+        onError: (error) => {
+            console.error('❌ Order sync failed:', error)
+            toast.error(error.message || 'Failed to sync orders. Please try again.', {
                 duration: 5000,
                 icon: '❌',
             })
@@ -232,8 +260,16 @@ export default function InventoryPage() {
                                     {isLoadingWeight ? 'Updating...' : 'Update Weight'}
                                 </Button>
                                 <Button
+                                    onClick={() => syncOrderMutation.mutate()}
+                                    disabled={syncOrderMutation.isPending || isLoadingPreview || syncMutation.isPending}
+                                    variant="outline"
+                                >
+                                    <ShoppingBag className={`mr-2 h-4 w-4 ${syncOrderMutation.isPending ? 'animate-spin' : ''}`} />
+                                    {syncOrderMutation.isPending ? 'Syncing...' : 'Sync Orders'}
+                                </Button>
+                                <Button
                                     onClick={handleSyncPreview}
-                                    disabled={isLoadingPreview || syncMutation.isPending || isLoadingWeight || weightMutation.isPending}
+                                    disabled={isLoadingPreview || syncMutation.isPending || isLoadingWeight || weightMutation.isPending || syncOrderMutation.isPending}
                                     variant="outline"
                                 >
                                     <RefreshCw className={`mr-2 h-4 w-4 ${isLoadingPreview ? 'animate-spin' : ''}`} />

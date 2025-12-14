@@ -49,6 +49,54 @@ export interface ShopifyProduct {
     updated_at: string
 }
 
+export interface ShopifyLineItem {
+    id: number
+    variant_id: number | null
+    product_id: number | null
+    title: string
+    quantity: number
+    sku: string | null
+    price: string
+    total_discount: string
+}
+
+export interface ShopifyOrder {
+    id: number
+    name: string // Order number e.g. #1001
+    email: string
+    financial_status: string
+    fulfillment_status: string | null
+    total_price: string
+    subtotal_price: string
+    total_tax: string
+    total_discounts: string
+    currency: string
+    processed_at: string
+    created_at: string
+    updated_at: string
+    line_items: ShopifyLineItem[]
+    customer?: {
+        first_name: string
+        last_name: string
+        email: string
+        default_address?: {
+            address1: string
+            city: string
+            zip: string
+            country: string
+        }
+    }
+    shipping_address?: {
+        address1: string
+        city: string
+        province: string
+        zip: string
+        country: string
+        first_name: string
+        last_name: string
+    }
+}
+
 export interface ShopifyProductsResponse {
     products: ShopifyProduct[]
 }
@@ -120,6 +168,59 @@ export async function fetchShopifyProducts(
         return allProducts
     } catch (error) {
         console.error('Error fetching Shopify products:', error)
+        throw error
+    }
+}
+
+/**
+ * Fetch orders from Shopify Admin API
+ * Requires Access Token obtained via OAuth
+ */
+export async function fetchShopifyOrders(
+    shopDomain: string,
+    accessToken: string,
+    sinceId: number = 0
+): Promise<ShopifyOrder[]> {
+    let allOrders: ShopifyOrder[] = []
+    let hasMore = true
+    let lastId = sinceId
+
+    try {
+        while (hasMore) {
+            const url = `https://${shopDomain}/admin/api/2024-01/orders.json?status=any&limit=250&since_id=${lastId}`
+            console.log(`📄 Fetching orders since ID ${lastId}...`)
+
+            const response = await fetch(url, {
+                headers: {
+                    'X-Shopify-Access-Token': accessToken,
+                    'Content-Type': 'application/json'
+                }
+            })
+
+            if (!response.ok) {
+                const errorText = await response.text()
+                throw new Error(`Failed to fetch orders: ${response.status} ${response.statusText} - ${errorText}`)
+            }
+
+            const data = await response.json()
+            const orders = data.orders as ShopifyOrder[]
+
+            if (orders.length === 0) {
+                hasMore = false
+            } else {
+                allOrders = [...allOrders, ...orders]
+                lastId = orders[orders.length - 1].id
+
+                if (orders.length < 250) {
+                    hasMore = false
+                }
+            }
+        }
+
+        console.log(`Total orders fetched: ${allOrders.length}`)
+        return allOrders
+    } catch (error) {
+        console.error('Error fetching Shopify orders:', error)
         throw error
     }
 }
