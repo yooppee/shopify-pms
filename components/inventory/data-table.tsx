@@ -24,7 +24,7 @@ import { ColumnVisibility } from './column-visibility'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { DateRange } from 'react-day-picker'
-import { format } from 'date-fns'
+import { format, subDays } from 'date-fns'
 import { Calendar as CalendarIcon, RefreshCw, Search, ChevronRight, ChevronDown, Save, Undo2, X, Trash2, Filter, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
 import { Checkbox } from '@/components/ui/checkbox'
 import Image from 'next/image'
@@ -1547,59 +1547,112 @@ export function InventoryDataTable({
                             onClick={(e) => e.stopPropagation()}
                             onMouseDown={(e) => e.stopPropagation()}
                         >
-                            <div className="flex flex-col">
-                                <Calendar
-                                    mode="range"
-                                    defaultMonth={tempDateRange?.from}
-                                    selected={tempDateRange}
-                                    onDayClick={(day) => {
-                                        // Manual control of date selection logic:
-                                        // 1. If we have a complete range (from + to), start fresh with clicked date as FROM
-                                        // 2. If we only have FROM, set clicked date as TO (or swap if before FROM)
-                                        // 3. If we have nothing, set clicked date as FROM
+                            <div className="flex">
+                                {/* Quick Presets - Left Side */}
+                                <div className="flex flex-col border-r py-2 min-w-[140px]">
+                                    {[
+                                        { label: 'Today', days: 0 },
+                                        { label: 'Yesterday', days: 1, offset: true },
+                                        { label: 'Last 7 days', days: 7 },
+                                        { label: 'Last 14 days', days: 14 },
+                                        { label: 'Last 30 days', days: 30 },
+                                        { label: 'Last 90 days', days: 90 },
+                                        { label: 'Last 365 days', days: 365 },
+                                    ].map((preset) => {
+                                        const today = new Date()
+                                        today.setHours(0, 0, 0, 0)
+                                        let from: Date, to: Date
 
-                                        if (tempDateRange?.from && tempDateRange?.to) {
-                                            // Complete range exists - start fresh with new FROM
-                                            setTempDateRange({ from: day, to: undefined })
-                                        } else if (tempDateRange?.from) {
-                                            // Only FROM exists - set TO (handle order)
-                                            if (day < tempDateRange.from) {
-                                                // Clicked date is before FROM, swap them
-                                                setTempDateRange({ from: day, to: tempDateRange.from })
-                                            } else {
-                                                setTempDateRange({ from: tempDateRange.from, to: day })
-                                            }
+                                        if (preset.offset) {
+                                            // Yesterday - single day
+                                            from = subDays(today, preset.days)
+                                            to = subDays(today, preset.days)
+                                        } else if (preset.days === 0) {
+                                            // Today
+                                            from = today
+                                            to = today
                                         } else {
-                                            // Nothing selected - set FROM
-                                            setTempDateRange({ from: day, to: undefined })
+                                            // Last N days
+                                            from = subDays(today, preset.days)
+                                            to = today
                                         }
-                                    }}
-                                    numberOfMonths={2}
-                                />
-                                <div className="flex items-center justify-end gap-2 p-3 border-t">
-                                    <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => {
-                                            // Reset temp to current confirmed range
-                                            setTempDateRange(dateRange)
-                                            setIsDatePickerOpen(false)
-                                        }}
-                                    >
-                                        Cancel
-                                    </Button>
-                                    <Button
-                                        size="sm"
-                                        disabled={!tempDateRange?.from || !tempDateRange?.to}
-                                        onClick={() => {
-                                            if (tempDateRange?.from && tempDateRange?.to && onDateRangeChange) {
-                                                onDateRangeChange(tempDateRange)
+
+                                        const isActive = tempDateRange?.from?.getTime() === from.getTime() &&
+                                            tempDateRange?.to?.getTime() === to.getTime()
+
+                                        return (
+                                            <button
+                                                key={preset.label}
+                                                className={cn(
+                                                    "px-4 py-2 text-sm text-left hover:bg-accent transition-colors",
+                                                    isActive && "bg-accent font-medium"
+                                                )}
+                                                onClick={() => {
+                                                    setTempDateRange({ from, to })
+                                                }}
+                                            >
+                                                {preset.label}
+                                                {isActive && <span className="ml-2 text-primary">✓</span>}
+                                            </button>
+                                        )
+                                    })}
+                                </div>
+
+                                {/* Calendar - Right Side */}
+                                <div className="flex flex-col">
+                                    <Calendar
+                                        mode="range"
+                                        defaultMonth={tempDateRange?.from}
+                                        selected={tempDateRange}
+                                        onDayClick={(day) => {
+                                            // Manual control of date selection logic:
+                                            // 1. If we have a complete range (from + to), start fresh with clicked date as FROM
+                                            // 2. If we only have FROM, set clicked date as TO (or swap if before FROM)
+                                            // 3. If we have nothing, set clicked date as FROM
+
+                                            if (tempDateRange?.from && tempDateRange?.to) {
+                                                // Complete range exists - start fresh with new FROM
+                                                setTempDateRange({ from: day, to: undefined })
+                                            } else if (tempDateRange?.from) {
+                                                // Only FROM exists - set TO (handle order)
+                                                if (day < tempDateRange.from) {
+                                                    // Clicked date is before FROM, swap them
+                                                    setTempDateRange({ from: day, to: tempDateRange.from })
+                                                } else {
+                                                    setTempDateRange({ from: tempDateRange.from, to: day })
+                                                }
+                                            } else {
+                                                // Nothing selected - set FROM
+                                                setTempDateRange({ from: day, to: undefined })
                                             }
-                                            setIsDatePickerOpen(false)
                                         }}
-                                    >
-                                        Apply
-                                    </Button>
+                                        numberOfMonths={2}
+                                    />
+                                    <div className="flex items-center justify-end gap-2 p-3 border-t">
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => {
+                                                // Reset temp to current confirmed range
+                                                setTempDateRange(dateRange)
+                                                setIsDatePickerOpen(false)
+                                            }}
+                                        >
+                                            Cancel
+                                        </Button>
+                                        <Button
+                                            size="sm"
+                                            disabled={!tempDateRange?.from || !tempDateRange?.to}
+                                            onClick={() => {
+                                                if (tempDateRange?.from && tempDateRange?.to && onDateRangeChange) {
+                                                    onDateRangeChange(tempDateRange)
+                                                }
+                                                setIsDatePickerOpen(false)
+                                            }}
+                                        >
+                                            Apply
+                                        </Button>
+                                    </div>
                                 </div>
                             </div>
                         </div>
