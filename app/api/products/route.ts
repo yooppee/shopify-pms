@@ -52,7 +52,7 @@ export async function GET(request: NextRequest) {
         }
 
         // Fetch order counts if date range is provided
-        let orderCounts: Record<number, number> = {}
+        const orderCounts: Record<number, number> = {}
         if (startDate && endDate) {
             console.log(`📊 Fetching orders between ${startDate} and ${endDate}`)
             const { data: lineItems, error: orderError } = await supabase
