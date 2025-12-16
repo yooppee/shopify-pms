@@ -31,7 +31,9 @@ export async function POST(request: NextRequest) {
         const { data: credentials, error: credError } = await supabase
             .from('shop_credentials')
             .select('*')
-            .single() // Assuming single store usage for PMS
+            .order('updated_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
 
         if (credError || !credentials) {
             return NextResponse.json({
@@ -68,8 +70,8 @@ export async function POST(request: NextRequest) {
             customer_name: order.customer ? `${order.customer.first_name || ''} ${order.customer.last_name || ''}`.trim() : null,
             shipping_address: order.shipping_address || null, // JSONB
             processed_at: order.processed_at,
-            order_created_at: order.created_at, // Use proper column map
-            order_updated_at: order.updated_at
+            created_at: order.created_at, // Map generic created_at
+            updated_at: order.updated_at  // Map generic updated_at
             // created_at / updated_at handled by DB defaults
         }))
 

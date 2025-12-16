@@ -2,6 +2,12 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Fix for react-day-picker v9 hidden elements */
+.rdp-vhidden {
+  @apply hidden;
+}
+
+
 @layer base {
   :root {
     --background: 0 0% 100%;

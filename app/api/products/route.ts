@@ -29,6 +29,10 @@ function createServiceRoleClient() {
  */
 export async function GET(request: NextRequest) {
     try {
+        const searchParams = request.nextUrl.searchParams
+        const startDate = searchParams.get('start_date')
+        const endDate = searchParams.get('end_date')
+
         // Use service role key to ensure we're reading the same data that sync writes
         const supabase = createServiceRoleClient()
 
@@ -46,6 +50,35 @@ export async function GET(request: NextRequest) {
                 { status: 500 }
             )
         }
+
+        // Fetch order counts if date range is provided
+        let orderCounts: Record<number, number> = {}
+        if (startDate && endDate) {
+            console.log(`📊 Fetching orders between ${startDate} and ${endDate}`)
+            const { data: lineItems, error: orderError } = await supabase
+                .from('order_line_items')
+                .select('variant_id, quantity, orders!inner(created_at)')
+                .gte('orders.created_at', startDate)
+                .lte('orders.created_at', endDate)
+
+            if (orderError) {
+                console.error('Failed to fetch order stats:', orderError)
+            } else if (lineItems) {
+                lineItems.forEach((item: any) => {
+                    const vid = item.variant_id
+                    const qty = item.quantity || 0
+                    if (vid) {
+                        orderCounts[vid] = (orderCounts[vid] || 0) + qty
+                    }
+                })
+                console.log(`📊 Found order stats for ${Object.keys(orderCounts).length} variants`)
+            }
+        }
+
+        const productsWithCounts = products?.map(p => ({
+            ...p,
+            order_count: orderCounts[p.variant_id] || 0
+        })) || []
 
         // Debug: Show how many products returned
         console.log(`📊 Fetched ${products?.length || 0} products from DATABASE`)
@@ -69,7 +102,7 @@ export async function GET(request: NextRequest) {
 
         const response = NextResponse.json({
             success: true,
-            products: products || [],
+            products: productsWithCounts,
             count: products?.length || 0,
             exactDbCount: exactCount, // Add this for debugging
         })

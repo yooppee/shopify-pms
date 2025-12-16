@@ -8,11 +8,24 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { RefreshCw, Scale, FileSpreadsheet, ShoppingBag } from 'lucide-react'
 import { ImportDialog } from '@/components/inventory/import-dialog'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import toast, { Toaster } from 'react-hot-toast'
 
-async function fetchProducts() {
-    const response = await fetch('/api/products')  // Changed: fetch from database
+import { DateRange } from 'react-day-picker'
+
+async function fetchProducts(dateRange?: DateRange) {
+    let url = '/api/products'
+    if (dateRange?.from && dateRange?.to) {
+        const endDate = new Date(dateRange.to)
+        endDate.setHours(23, 59, 59, 999)
+
+        const params = new URLSearchParams({
+            start_date: dateRange.from.toISOString(),
+            end_date: endDate.toISOString()
+        })
+        url += `?${params.toString()}`
+    }
+    const response = await fetch(url)
     if (!response.ok) throw new Error('Failed to fetch products')
     const data = await response.json()
     return data.products || []
@@ -53,8 +66,22 @@ async function syncOrders() {
     return response.json()
 }
 
+import { subDays } from 'date-fns'
+
+// ...
+
 export default function InventoryPage() {
     const queryClient = useQueryClient()
+    const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined)
+
+    // Set default date range on mount to avoid hydration mismatch
+    useEffect(() => {
+        setDateRange({
+            from: subDays(new Date(), 30),
+            to: new Date(),
+        })
+    }, [])
+
     const [pendingSyncData, setPendingSyncData] = useState<any[] | undefined>(undefined)
     const [pendingWeightData, setPendingWeightData] = useState<any[] | undefined>(undefined)
     const [isLoadingPreview, setIsLoadingPreview] = useState(false)
@@ -64,8 +91,8 @@ export default function InventoryPage() {
     const [importDialogOpen, setImportDialogOpen] = useState(false)
 
     const { data: products = [], isLoading, error } = useQuery({
-        queryKey: ['products'],
-        queryFn: fetchProducts,  // Fetch from database
+        queryKey: ['products', dateRange],
+        queryFn: () => fetchProducts(dateRange),
     })
 
 
@@ -299,6 +326,13 @@ export default function InventoryPage() {
                                 isSyncing={syncMutation.isPending}
                                 isUpdatingWeight={weightMutation.isPending}
                                 onRefresh={() => queryClient.invalidateQueries({ queryKey: ['products'] })}
+                                dateRange={dateRange}
+                                onDateRangeChange={(range) => {
+                                    // Only update when both dates are selected
+                                    if (range?.from && range?.to) {
+                                        setDateRange(range)
+                                    }
+                                }}
                             />
                         )}
                     </div>

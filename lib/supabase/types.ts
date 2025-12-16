@@ -94,4 +94,5 @@ export interface ProductWithCalculations extends Product {
     live_price?: number
     live_inventory?: number
     has_changes?: boolean
+    order_count?: number
 }

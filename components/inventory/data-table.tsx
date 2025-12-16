@@ -23,10 +23,15 @@ import { EditableCell } from './editable-cell'
 import { ColumnVisibility } from './column-visibility'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { RefreshCw, Search, ChevronRight, ChevronDown, Save, Undo2, X, Trash2, Filter } from 'lucide-react'
+import { DateRange } from 'react-day-picker'
+import { format } from 'date-fns'
+import { Calendar as CalendarIcon, RefreshCw, Search, ChevronRight, ChevronDown, Save, Undo2, X, Trash2, Filter } from 'lucide-react'
 import { Checkbox } from '@/components/ui/checkbox'
 import Image from 'next/image'
 import { supabaseUntyped } from '@/lib/supabase/client'
+import { cn } from '@/lib/utils'
+import { Calendar } from '@/components/ui/calendar'
+import { Popover, PopoverContent, PopoverTrigger, PopoverClose } from '@/components/ui/popover'
 import { DiffCell } from './sync-indicator'
 import {
     DropdownMenu,
@@ -83,6 +88,8 @@ interface InventoryDataTableProps {
     isSyncing?: boolean // New prop to indicate sync in progress
     isUpdatingWeight?: boolean // New prop to indicate weight update in progress
     onRefresh?: () => void // Callback to refresh parent data
+    dateRange?: DateRange // Date range for order filter
+    onDateRangeChange?: (range: DateRange | undefined) => void
 }
 
 export function InventoryDataTable({
@@ -96,6 +103,8 @@ export function InventoryDataTable({
     isSyncing = false,
     isUpdatingWeight = false,
     onRefresh,
+    dateRange,
+    onDateRangeChange,
 }: InventoryDataTableProps) {
     const [sorting, setSorting] = useState<SortingState>([])
     const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
@@ -138,6 +147,19 @@ export function InventoryDataTable({
     })
     const [draggedColumn, setDraggedColumn] = useState<string | null>(null)
     const [vendorFilter, setVendorFilter] = useState<Set<string>>(new Set())
+
+
+
+    // Temporary date range for calendar selection UI (allows showing partial selection)
+    const [tempDateRange, setTempDateRange] = useState<DateRange | undefined>(dateRange)
+
+    // State for date picker dropdown - must be at component level to persist across renders
+    const [isDatePickerOpen, setIsDatePickerOpen] = useState(false)
+
+    // Sync tempDateRange when parent's dateRange changes
+    useEffect(() => {
+        setTempDateRange(dateRange)
+    }, [dateRange])
 
     // Extract unique vendors for filter dropdown
     const uniqueVendors = useMemo(() => {
@@ -1466,6 +1488,123 @@ export function InventoryDataTable({
             },
         },
         {
+            id: 'orders',
+            header: () => (
+                <div className="flex flex-col gap-1.5 min-w-[140px] relative">
+                    <span className="text-xs font-medium text-muted-foreground">Orders (Units)</span>
+                    <Button
+                        variant={"outline"}
+                        size="sm"
+                        className={cn(
+                            "w-full justify-start text-left font-normal h-7 px-2 text-xs shadow-sm bg-card hover:bg-accent",
+                            !dateRange && "text-muted-foreground"
+                        )}
+                        onClick={() => setIsDatePickerOpen(true)}
+                    >
+                        <CalendarIcon className="mr-2 h-3 w-3 opacity-70" />
+                        <span className="truncate">
+                            {dateRange?.from ? (
+                                dateRange.to ? (
+                                    <>
+                                        {format(dateRange.from, "MMM d")} - {format(dateRange.to, "MMM d")}
+                                    </>
+                                ) : (
+                                    format(dateRange.from, "MMM d")
+                                )
+                            ) : (
+                                <span>Pick dates</span>
+                            )}
+                        </span>
+                    </Button>
+
+                    {/* Custom dropdown - only closes on Apply/Cancel click */}
+                    {isDatePickerOpen && (
+                        <div
+                            className="absolute top-full left-0 mt-1 z-50 rounded-md border bg-popover text-popover-foreground shadow-md"
+                            onClick={(e) => e.stopPropagation()}
+                            onMouseDown={(e) => e.stopPropagation()}
+                        >
+                            <div className="flex flex-col">
+                                <Calendar
+                                    mode="range"
+                                    defaultMonth={tempDateRange?.from}
+                                    selected={tempDateRange}
+                                    onDayClick={(day) => {
+                                        // Manual control of date selection logic:
+                                        // 1. If we have a complete range (from + to), start fresh with clicked date as FROM
+                                        // 2. If we only have FROM, set clicked date as TO (or swap if before FROM)
+                                        // 3. If we have nothing, set clicked date as FROM
+
+                                        if (tempDateRange?.from && tempDateRange?.to) {
+                                            // Complete range exists - start fresh with new FROM
+                                            setTempDateRange({ from: day, to: undefined })
+                                        } else if (tempDateRange?.from) {
+                                            // Only FROM exists - set TO (handle order)
+                                            if (day < tempDateRange.from) {
+                                                // Clicked date is before FROM, swap them
+                                                setTempDateRange({ from: day, to: tempDateRange.from })
+                                            } else {
+                                                setTempDateRange({ from: tempDateRange.from, to: day })
+                                            }
+                                        } else {
+                                            // Nothing selected - set FROM
+                                            setTempDateRange({ from: day, to: undefined })
+                                        }
+                                    }}
+                                    numberOfMonths={2}
+                                />
+                                <div className="flex items-center justify-end gap-2 p-3 border-t">
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => {
+                                            // Reset temp to current confirmed range
+                                            setTempDateRange(dateRange)
+                                            setIsDatePickerOpen(false)
+                                        }}
+                                    >
+                                        Cancel
+                                    </Button>
+                                    <Button
+                                        size="sm"
+                                        disabled={!tempDateRange?.from || !tempDateRange?.to}
+                                        onClick={() => {
+                                            if (tempDateRange?.from && tempDateRange?.to && onDateRangeChange) {
+                                                onDateRangeChange(tempDateRange)
+                                            }
+                                            setIsDatePickerOpen(false)
+                                        }}
+                                    >
+                                        Apply
+                                    </Button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            ),
+            size: 150,
+            cell: ({ row }) => {
+                const count = row.original.order_count
+
+                // Use aggregated count for SPUs
+                if (row.original.is_spu && row.original.subRows) {
+                    const totalOrderCount = row.original.subRows.reduce((sum, sub) => sum + (sub.order_count || 0), 0)
+                    return (
+                        <div className="flex items-center justify-center font-mono text-xs font-bold bg-muted/30 py-1 rounded w-16 mx-auto">
+                            {totalOrderCount}
+                        </div>
+                    )
+                }
+
+                return (
+                    <div className="flex items-center justify-center font-mono text-xs text-muted-foreground">
+                        {count || 0}
+                    </div>
+                )
+            }
+        },
+        {
             id: 'inventory',
             header: () => <span className="text-foreground">Inventory</span>,
             size: 80,
@@ -1794,7 +1933,7 @@ export function InventoryDataTable({
                 )
             },
         },
-    ], [deleteMode, pendingDeletions, handleDeleteToggle, handleDeleteAllToggle, handleUpdate, pendingWeightData, vendorFilter, uniqueVendors])
+    ], [deleteMode, pendingDeletions, handleDeleteToggle, handleDeleteAllToggle, handleUpdate, pendingWeightData, vendorFilter, uniqueVendors, dateRange, tempDateRange, onDateRangeChange, isDatePickerOpen])
 
     // Fixed columns that should always be at the beginning in fixed order
     const FIXED_COLUMNS = ['delete', 'expander', 'image', 'title']
