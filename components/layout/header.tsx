@@ -2,9 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/browser'
-import { logout } from '@/app/login/actions'
-import { LogOut, User } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { User } from 'lucide-react'
 
 export function Header() {
     const [userEmail, setUserEmail] = useState<string | null>(null)
@@ -22,10 +20,6 @@ export function Header() {
         getUser()
     }, [])
 
-    async function handleLogout() {
-        await logout()
-    }
-
     return (
         <header className="h-14 border-b bg-white flex items-center justify-between px-6">
             <div className="flex items-center gap-2">
@@ -35,23 +29,11 @@ export function Header() {
             {isLoading ? (
                 <div className="flex items-center gap-4">
                     <div className="animate-pulse bg-slate-100 h-4 w-32 rounded"></div>
-                    <div className="animate-pulse bg-slate-100 h-8 w-20 rounded"></div>
                 </div>
             ) : userEmail ? (
-                <div className="flex items-center gap-4">
-                    <div className="flex items-center gap-2 text-sm text-slate-600">
-                        <User className="h-4 w-4" />
-                        <span>{userEmail}</span>
-                    </div>
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={handleLogout}
-                        className="text-slate-600 hover:text-red-600 hover:bg-red-50"
-                    >
-                        <LogOut className="h-4 w-4 mr-1" />
-                        登出
-                    </Button>
+                <div className="flex items-center gap-2 text-sm text-slate-600">
+                    <User className="h-4 w-4" />
+                    <span>{userEmail}</span>
                 </div>
             ) : null}
         </header>

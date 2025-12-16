@@ -25,7 +25,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { DateRange } from 'react-day-picker'
 import { format } from 'date-fns'
-import { Calendar as CalendarIcon, RefreshCw, Search, ChevronRight, ChevronDown, Save, Undo2, X, Trash2, Filter } from 'lucide-react'
+import { Calendar as CalendarIcon, RefreshCw, Search, ChevronRight, ChevronDown, Save, Undo2, X, Trash2, Filter, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
 import { Checkbox } from '@/components/ui/checkbox'
 import Image from 'next/image'
 import { supabaseUntyped } from '@/lib/supabase/client'
@@ -1489,9 +1489,32 @@ export function InventoryDataTable({
         },
         {
             id: 'orders',
-            header: () => (
+            accessorFn: (row) => {
+                // For SPU, sum all subRows order counts
+                if (row.is_spu && row.subRows) {
+                    return row.subRows.reduce((sum, sub) => sum + (sub.order_count || 0), 0)
+                }
+                return row.order_count || 0
+            },
+            header: ({ column }) => (
                 <div className="flex flex-col gap-1.5 min-w-[140px] relative">
-                    <span className="text-xs font-medium text-muted-foreground">Orders (Units)</span>
+                    <div className="flex items-center gap-1">
+                        <span className="text-xs font-medium text-muted-foreground">Orders (Units)</span>
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-5 w-5 p-0 hover:bg-muted"
+                            onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+                        >
+                            {column.getIsSorted() === "asc" ? (
+                                <ArrowUp className="h-3 w-3" />
+                            ) : column.getIsSorted() === "desc" ? (
+                                <ArrowDown className="h-3 w-3" />
+                            ) : (
+                                <ArrowUpDown className="h-3 w-3 opacity-50" />
+                            )}
+                        </Button>
+                    </div>
                     <Button
                         variant={"outline"}
                         size="sm"

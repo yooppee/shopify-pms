@@ -42,10 +42,8 @@ export function Sidebar() {
 
     return (
         <div
-            className={cn(
-                "flex h-screen flex-col border-r bg-card transition-all duration-300 ease-in-out",
-                isOpen ? "w-64" : "w-16"
-            )}
+            style={{ width: isOpen ? 256 : 64 }}
+            className="flex h-screen flex-col border-r bg-card shrink-0"
         >
             {/* Logo */}
             <div className={cn(
@@ -53,12 +51,11 @@ export function Sidebar() {
                 isOpen ? "px-6" : "justify-center px-0"
             )}>
                 <Package className="h-6 w-6 text-primary shrink-0" />
-                <span className={cn(
-                    "ml-2 text-lg font-semibold overflow-hidden transition-all duration-300",
-                    isOpen ? "opacity-100 w-auto" : "opacity-0 w-0 hidden"
-                )}>
-                    Shopify PMS
-                </span>
+                {isOpen && (
+                    <span className="ml-2 text-lg font-semibold whitespace-nowrap">
+                        Shopify PMS
+                    </span>
+                )}
             </div>
 
             {/* Navigation */}
@@ -71,7 +68,7 @@ export function Sidebar() {
                             href={item.href}
                             title={!isOpen ? item.name : undefined}
                             className={cn(
-                                'flex items-center rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                                'flex items-center rounded-lg px-3 py-2 text-sm font-medium',
                                 isActive
                                     ? 'bg-primary text-primary-foreground'
                                     : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
@@ -79,12 +76,11 @@ export function Sidebar() {
                             )}
                         >
                             <item.icon className="h-5 w-5 shrink-0" />
-                            <span className={cn(
-                                "transition-all duration-300 overflow-hidden",
-                                isOpen ? "opacity-100 w-auto" : "opacity-0 w-0 hidden"
-                            )}>
-                                {item.name}
-                            </span>
+                            {isOpen && (
+                                <span className="whitespace-nowrap">
+                                    {item.name}
+                                </span>
+                            )}
                         </Link>
                     )
                 })}
@@ -93,7 +89,7 @@ export function Sidebar() {
             {/* Footer / Toggle */}
             <div className="border-t p-4 flex flex-col gap-4">
                 {isOpen && (
-                    <div className="text-xs text-muted-foreground whitespace-nowrap overflow-hidden">
+                    <div className="text-xs text-muted-foreground whitespace-nowrap">
                         <div className="font-medium">Shopify PMS v1.0</div>
                         <div className="mt-1">Product Management System</div>
                     </div>
@@ -114,3 +110,4 @@ export function Sidebar() {
         </div>
     )
 }
+
