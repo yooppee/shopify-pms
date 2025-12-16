@@ -1,4 +1,4 @@
-﻿'use client'
+'use client'
 
 import React, { useMemo, useState, useEffect, useCallback } from 'react'
 import {
@@ -147,6 +147,24 @@ export function InventoryDataTable({
     })
     const [draggedColumn, setDraggedColumn] = useState<string | null>(null)
     const [vendorFilter, setVendorFilter] = useState<Set<string>>(new Set())
+
+    // Text overflow mode: 'wrap' allows text to wrap, 'truncate' hides overflow with ellipsis
+    const [textOverflowMode, setTextOverflowMode] = useState<'wrap' | 'truncate'>(() => {
+        if (typeof window !== 'undefined') {
+            const saved = localStorage.getItem('inventory-text-overflow-mode')
+            if (saved === 'wrap' || saved === 'truncate') {
+                return saved
+            }
+        }
+        return 'wrap' // Default to wrap mode
+    })
+
+    // Save text overflow mode to localStorage when it changes
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            localStorage.setItem('inventory-text-overflow-mode', textOverflowMode)
+        }
+    }, [textOverflowMode])
 
 
 
@@ -1179,7 +1197,7 @@ export function InventoryDataTable({
                             const newBaseTitle = syncTitleParts.length > 1 ? syncTitleParts.slice(0, -1).join(' - ') : syncTitleParts[0]
 
                             return (
-                                <div className="font-medium flex flex-col">
+                                <div className="font-medium flex flex-col overflow-hidden">
                                     <span className="text-green-600 font-bold text-xs">
                                         {landingUrl ? (
                                             <a
@@ -1209,8 +1227,8 @@ export function InventoryDataTable({
                     }
 
                     return (
-                        <div className="font-medium flex items-center gap-2">
-                            <div className="flex-1">
+                        <div className="font-medium flex items-center gap-2 overflow-hidden">
+                            <div className="flex-1 min-w-0 overflow-hidden">
                                 {landingUrl ? (
                                     <a
                                         href={landingUrl}
@@ -1254,7 +1272,7 @@ export function InventoryDataTable({
                     const newTitle = syncTitleParts.length > 1 ? syncTitleParts[syncTitleParts.length - 1] : 'Default'
 
                     return (
-                        <div className="text-xs flex flex-col">
+                        <div className="text-xs flex flex-col overflow-hidden">
                             <span className="text-green-600 font-bold">
                                 {landingUrl ? (
                                     <a
@@ -1278,8 +1296,8 @@ export function InventoryDataTable({
                 }
 
                 return (
-                    <div className="text-xs text-foreground flex items-center gap-2">
-                        <div className="flex-1">
+                    <div className="text-xs text-foreground flex items-center gap-2 overflow-hidden">
+                        <div className="flex-1 min-w-0 overflow-hidden">
                             {landingUrl ? (
                                 <a
                                     href={landingUrl}
@@ -2155,14 +2173,18 @@ export function InventoryDataTable({
                             ? `Save (${pendingChanges.size + pendingDeletions.size + syncDiffCount + weightDiffCount})`
                             : 'Saved'}
                     </Button>
-                    <ColumnVisibility columns={table.getAllColumns()} />
+                    <ColumnVisibility
+                        columns={table.getAllColumns()}
+                        textOverflowMode={textOverflowMode}
+                        onTextOverflowModeChange={setTextOverflowMode}
+                    />
                 </div>
             </div>
 
             {/* Data Table */}
             <div className="border rounded-md">
                 <div className="max-h-[calc(100vh-12rem)] overflow-auto">
-                    <table className="w-full text-sm">
+                    <table className="w-full text-sm" style={{ tableLayout: 'fixed' }}>
                         <thead className="sticky top-0 bg-background border-b z-10 shadow-sm">
                             {table.getHeaderGroups().map((headerGroup) => (
                                 <tr key={headerGroup.id}>
@@ -2233,7 +2255,13 @@ export function InventoryDataTable({
                     `}
                                     >
                                         {row.getVisibleCells().map((cell) => (
-                                            <td key={cell.id} className="px-4 py-2 align-middle">
+                                            <td
+                                                key={cell.id}
+                                                className={`px-4 py-2 align-middle ${textOverflowMode === 'truncate'
+                                                    ? 'whitespace-nowrap overflow-hidden text-ellipsis max-w-0'
+                                                    : 'break-all'
+                                                    }`}
+                                            >
                                                 {flexRender(cell.column.columnDef.cell, cell.getContext())}
                                             </td>
                                         ))}

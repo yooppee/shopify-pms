@@ -77,7 +77,7 @@ export function EditableCell({
 
     return (
         <div
-            className={`cell-editable h-8 px-2 py-1 font-mono text-xs text-foreground cursor-text hover:bg-muted/50 rounded transition-colors flex items-center ${className || ''}`}
+            className={`cell-editable h-auto min-h-8 px-2 py-1 font-mono text-xs text-foreground cursor-text hover:bg-muted/50 rounded transition-colors flex items-center ${className || ''}`}
             onClick={() => setIsEditing(true)}
             title={tooltip}
         >

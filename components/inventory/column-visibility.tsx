@@ -11,16 +11,21 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Settings2 } from 'lucide-react'
+import { Settings2, WrapText, AlignLeft } from 'lucide-react'
+import { cn } from '@/lib/utils'
 
 interface ColumnVisibilityProps<TData> {
     columns: Column<TData, any>[]
     storageKey?: string
+    textOverflowMode?: 'wrap' | 'truncate'
+    onTextOverflowModeChange?: (mode: 'wrap' | 'truncate') => void
 }
 
 export function ColumnVisibility<TData>({
     columns,
-    storageKey = 'inventory-column-visibility'
+    storageKey = 'inventory-column-visibility',
+    textOverflowMode = 'wrap',
+    onTextOverflowModeChange
 }: ColumnVisibilityProps<TData>) {
 
     const toggleColumn = (columnId: string, visible: boolean) => {
@@ -49,28 +54,61 @@ export function ColumnVisibility<TData>({
                     Columns
                 </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuLabel>Toggle columns</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                {columns
-                    .filter(column => column.getCanHide())
-                    .map(column => {
-                        const columnId = column.id || ''
-                        const columnTitle = typeof column.columnDef.header === 'string'
-                            ? column.columnDef.header
-                            : columnId
+            <DropdownMenuContent align="end" className="w-auto min-w-[320px]">
+                <div className="flex">
+                    {/* Left Panel - Text Display Options */}
+                    <div className="flex flex-col border-r min-w-[130px]">
+                        <DropdownMenuLabel className="text-xs text-muted-foreground">Text Display</DropdownMenuLabel>
+                        <DropdownMenuSeparator />
+                        <button
+                            className={cn(
+                                "flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-accent transition-colors",
+                                textOverflowMode === 'wrap' && "bg-accent font-medium"
+                            )}
+                            onClick={() => onTextOverflowModeChange?.('wrap')}
+                        >
+                            <WrapText className="h-4 w-4" />
+                            <span>Wrap Text</span>
+                            {textOverflowMode === 'wrap' && <span className="ml-auto text-primary">✓</span>}
+                        </button>
+                        <button
+                            className={cn(
+                                "flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-accent transition-colors",
+                                textOverflowMode === 'truncate' && "bg-accent font-medium"
+                            )}
+                            onClick={() => onTextOverflowModeChange?.('truncate')}
+                        >
+                            <AlignLeft className="h-4 w-4" />
+                            <span>Truncate</span>
+                            {textOverflowMode === 'truncate' && <span className="ml-auto text-primary">✓</span>}
+                        </button>
+                    </div>
 
-                        return (
-                            <DropdownMenuCheckboxItem
-                                key={columnId}
-                                className="capitalize"
-                                checked={column.getIsVisible()}
-                                onCheckedChange={(value) => toggleColumn(columnId, value)}
-                            >
-                                {columnTitle}
-                            </DropdownMenuCheckboxItem>
-                        )
-                    })}
+                    {/* Right Panel - Toggle Columns */}
+                    <div className="flex flex-col min-w-[180px] max-h-[300px] overflow-y-auto">
+                        <DropdownMenuLabel>Toggle columns</DropdownMenuLabel>
+                        <DropdownMenuSeparator />
+                        {columns
+                            .filter(column => column.getCanHide())
+                            .map(column => {
+                                const columnId = column.id || ''
+                                const columnTitle = typeof column.columnDef.header === 'string'
+                                    ? column.columnDef.header
+                                    : columnId
+
+                                return (
+                                    <DropdownMenuCheckboxItem
+                                        key={columnId}
+                                        className="capitalize"
+                                        checked={column.getIsVisible()}
+                                        onCheckedChange={(value) => toggleColumn(columnId, value)}
+                                    >
+                                        {columnTitle}
+                                    </DropdownMenuCheckboxItem>
+                                )
+                            })}
+                    </div>
+                </div>
             </DropdownMenuContent>
         </DropdownMenu>
     )
