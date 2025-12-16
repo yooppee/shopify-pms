@@ -145,6 +145,7 @@ export async function POST(request: NextRequest) {
             success: true,
             synced_orders: orders.length,
             synced_items: lineItemsToUpsert.length,
+            synced_at: new Date().toISOString(),
             message: `Successfully synced ${orders.length} orders`
         })
 

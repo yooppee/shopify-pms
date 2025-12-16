@@ -83,6 +83,15 @@ export default function InventoryPage() {
 
     const [pendingSyncData, setPendingSyncData] = useState<any[] | undefined>(undefined)
     const [pendingWeightData, setPendingWeightData] = useState<any[] | undefined>(undefined)
+    const [lastOrderSyncTime, setLastOrderSyncTime] = useState<string | null>(null)
+
+    // Load last order sync time from localStorage
+    useEffect(() => {
+        const saved = localStorage.getItem('lastOrderSyncTime')
+        if (saved) {
+            setLastOrderSyncTime(saved)
+        }
+    }, [])
     const [isLoadingPreview, setIsLoadingPreview] = useState(false)
     const [isLoadingWeight, setIsLoadingWeight] = useState(false)
     const [showModeDialog, setShowModeDialog] = useState(false)
@@ -170,10 +179,17 @@ export default function InventoryPage() {
         mutationFn: syncOrders,
         onSuccess: async (data: any) => {
             console.log('✅ Order sync successful:', data)
+            // Save sync time
+            if (data.synced_at) {
+                setLastOrderSyncTime(data.synced_at)
+                localStorage.setItem('lastOrderSyncTime', data.synced_at)
+            }
             toast.success(data.message || 'Orders synced successfully!', {
                 duration: 4000,
                 icon: '✅',
             })
+            // Refresh products to update order counts
+            await queryClient.invalidateQueries({ queryKey: ['products'] })
         },
         onError: (error) => {
             console.error('❌ Order sync failed:', error)
@@ -284,14 +300,22 @@ export default function InventoryPage() {
                                     <Scale className={`mr-2 h-4 w-4 ${isLoadingWeight ? 'animate-spin' : ''}`} />
                                     {isLoadingWeight ? 'Updating...' : 'Update Weight'}
                                 </Button>
-                                <Button
-                                    onClick={() => syncOrderMutation.mutate()}
-                                    disabled={syncOrderMutation.isPending || isLoadingPreview || syncMutation.isPending}
-                                    variant="outline"
-                                >
-                                    <ShoppingBag className={`mr-2 h-4 w-4 ${syncOrderMutation.isPending ? 'animate-spin' : ''}`} />
-                                    {syncOrderMutation.isPending ? 'Syncing...' : 'Sync Orders'}
-                                </Button>
+                                <div className="flex flex-col items-start">
+                                    <Button
+                                        onClick={() => syncOrderMutation.mutate()}
+                                        disabled={syncOrderMutation.isPending || isLoadingPreview || syncMutation.isPending}
+                                        variant="outline"
+                                        className="w-full"
+                                    >
+                                        <ShoppingBag className={`mr-2 h-4 w-4 ${syncOrderMutation.isPending ? 'animate-spin' : ''}`} />
+                                        {syncOrderMutation.isPending ? 'Syncing...' : 'Sync Orders'}
+                                    </Button>
+                                    {lastOrderSyncTime && !syncOrderMutation.isPending && (
+                                        <span className="text-xs text-muted-foreground mt-1 ml-1">
+                                            Last: {new Date(lastOrderSyncTime).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} {new Date(lastOrderSyncTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                                        </span>
+                                    )}
+                                </div>
                                 <Button
                                     onClick={handleSyncPreview}
                                     disabled={isLoadingPreview || syncMutation.isPending || isLoadingWeight || weightMutation.isPending || syncOrderMutation.isPending}
