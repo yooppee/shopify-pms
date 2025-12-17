@@ -100,6 +100,7 @@ export async function POST(request: NextRequest) {
                 weight: existing?.weight ?? product.weight,
                 image_url: product.image_url,
                 landing_page_url: product.landing_page_url,
+                position: product.position,
                 internal_meta: internalMeta,
             }
         })

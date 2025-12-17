@@ -117,6 +117,7 @@ export interface TransformedProduct {
     weight: number | null
     image_url: string | null
     landing_page_url: string
+    position: number
 }
 
 // ============================================
@@ -288,6 +289,7 @@ export function transformShopifyProducts(
                 weight: variant.weight !== null && variant.weight !== undefined ? variant.weight : null,
                 image_url: variantImageUrl,
                 landing_page_url: landingPageUrl,
+                position: variant.position,
             })
         }
     }

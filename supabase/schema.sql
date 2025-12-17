@@ -23,6 +23,7 @@ CREATE TABLE products (
   weight NUMERIC(10, 2),
   image_url TEXT,
   landing_page_url TEXT,
+  position INTEGER DEFAULT 0,
   
   -- Group B: Internal/Manual Columns (JSONB)
   internal_meta JSONB NOT NULL DEFAULT '{}',

@@ -13,6 +13,7 @@ export interface Product {
     weight: number | null
     image_url: string | null
     landing_page_url: string | null
+    position: number | null
     internal_meta: InternalMeta
     created_at: string
     updated_at: string

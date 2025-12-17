@@ -756,6 +756,8 @@ export function InventoryDataTable({
 
             // Create nodes for new products
             Array.from(newProductsGrouped.entries()).forEach(([spuId, variants]) => {
+                // Sort variants by position
+                variants.sort((a, b) => (a.position || 0) - (b.position || 0))
                 const firstVariant = variants[0]
                 // Extract base title by removing the last part (variant name) after the last ' - '
                 const titleParts = firstVariant.title.split(' - ')
@@ -833,6 +835,8 @@ export function InventoryDataTable({
             // Create nodes for deleted products
             const deletedRows: ProductNode[] = []
             Array.from(deletedProductsGrouped.entries()).forEach(([spuId, variants]) => {
+                // Sort variants by position
+                variants.sort((a, b) => (a.position || 0) - (b.position || 0))
                 const firstVariant = variants[0]
                 // Extract base title by removing the last part (variant name) after the last ' - '
                 const titleParts = firstVariant.title.split(' - ')
@@ -915,6 +919,8 @@ export function InventoryDataTable({
         }
 
         return Array.from(grouped.entries()).map(([spuId, variants]) => {
+            // Sort variants by position
+            variants.sort((a, b) => (a.position || 0) - (b.position || 0))
             const firstVariant = variants[0]
             // Extract base title by removing the last part (variant name) after the last ' - '
             const titleParts = firstVariant.title.split(' - ')
