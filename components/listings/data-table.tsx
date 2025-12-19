@@ -54,10 +54,12 @@ interface ListingNode {
     is_variant: boolean
     parentId?: string
     title: string
+    sku: string
     price: number
     compare_at_price: number | null
     cost: number | null
     weight: number | null
+    vendor: string
     note: string
     purchase_link: string
     is_pushed?: boolean
@@ -174,24 +176,28 @@ export function ListingsDataTable({
                 is_variant: true,
                 parentId: listing.id,
                 title: v.title,
+                sku: v.sku || '',
                 price: v.price,
                 compare_at_price: v.compare_at_price,
                 cost: v.cost,
                 weight: v.weight,
+                vendor: '', // Variants don't have vendor
                 note: v.note || '',
                 purchase_link: v.purchase_link || '',
-                is_pushed: false, // Variants inherit parent pushed status logic usually, but here focusing on SPU
-                original: v, // Reference to variant object
+                is_pushed: false,
+                original: v,
             }))
 
             return {
                 id: listing.id,
                 is_variant: false,
                 title: listing.draft_data.title || '',
+                sku: listing.draft_data.sku || '',
                 price: listing.draft_data.price || 0,
                 compare_at_price: listing.draft_data.compare_at_price || null,
                 cost: listing.draft_data.cost || null,
                 weight: listing.draft_data.weight || null,
+                vendor: listing.draft_data.vendor || '',
                 note: listing.draft_data.note || '',
                 purchase_link: listing.draft_data.purchase_link || '',
                 is_pushed: listing.draft_data.is_pushed || false,
@@ -419,6 +425,34 @@ export function ListingsDataTable({
                     format="currency"
                     onCommit={(val) => handleCellChange(row.original.id, 'cost', val, row.original.is_variant, row.original.parentId)}
                 />
+            ),
+        },
+        {
+            accessorKey: 'sku',
+            header: 'SKU',
+            size: 120,
+            cell: ({ row }) => (
+                <EditableCell
+                    value={getValueWithPending(row.original, 'sku')}
+                    format="text"
+                    onCommit={(val) => handleCellChange(row.original.id, 'sku', val, row.original.is_variant, row.original.parentId)}
+                />
+            ),
+        },
+        {
+            accessorKey: 'vendor',
+            header: 'Vendor',
+            size: 120,
+            cell: ({ row }) => (
+                row.original.is_variant ? (
+                    <span className="text-muted-foreground">-</span>
+                ) : (
+                    <EditableCell
+                        value={getValueWithPending(row.original, 'vendor')}
+                        format="text"
+                        onCommit={(val) => handleCellChange(row.original.id, 'vendor', val, row.original.is_variant, row.original.parentId)}
+                    />
+                )
             ),
         },
         {

@@ -30,11 +30,27 @@ export interface InternalMeta {
     [key: string]: any // Allow custom fields
 }
 
+export interface ListingDraftData {
+    title?: string
+    sku?: string
+    price?: number
+    compare_at_price?: number | null
+    cost?: number | null
+    weight?: number | null
+    vendor?: string
+    note?: string
+    purchase_link?: string
+    options?: any[]
+    variants?: any[]
+    is_pushed?: boolean
+    shopify_product_id?: string
+}
+
 export interface ListingDraft {
     id: string
     product_id: string | null
     original_data: any
-    draft_data: any
+    draft_data: ListingDraftData
     status: 'draft' | 'ready'
     created_at: string
     updated_at: string
