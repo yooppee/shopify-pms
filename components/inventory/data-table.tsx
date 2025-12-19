@@ -1082,7 +1082,7 @@ export function InventoryDataTable({
         {
             id: 'image',
             header: () => <span className="text-foreground">Image*</span>,
-            size: 50,
+            size: 60,
             enableResizing: false,
             cell: ({ row }) => {
                 const [showPreview, setShowPreview] = React.useState(false)
@@ -1521,47 +1521,33 @@ export function InventoryDataTable({
                 return row.order_count || 0
             },
             header: ({ column }) => (
-                <div className="flex flex-col gap-1.5 min-w-[140px] relative">
-                    <div className="flex items-center gap-1">
-                        <span className="text-xs font-medium text-muted-foreground">Orders (Units)</span>
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-5 w-5 p-0 hover:bg-muted"
-                            onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-                        >
-                            {column.getIsSorted() === "asc" ? (
-                                <ArrowUp className="h-3 w-3" />
-                            ) : column.getIsSorted() === "desc" ? (
-                                <ArrowDown className="h-3 w-3" />
-                            ) : (
-                                <ArrowUpDown className="h-3 w-3 opacity-50" />
-                            )}
-                        </Button>
-                    </div>
+                <div className="flex items-center gap-1 relative">
+                    <span className="text-xs font-medium text-foreground">Orders</span>
                     <Button
-                        variant={"outline"}
+                        variant="ghost"
                         size="sm"
-                        className={cn(
-                            "w-full justify-start text-left font-normal h-7 px-2 text-xs shadow-sm bg-card hover:bg-accent",
-                            !dateRange && "text-muted-foreground"
-                        )}
+                        className="h-5 w-5 p-0 hover:bg-muted"
                         onClick={() => setIsDatePickerOpen(true)}
+                        title={dateRange?.from && dateRange?.to
+                            ? `${format(dateRange.from, "MMM d")} - ${format(dateRange.to, "MMM d")}`
+                            : "Select date range"
+                        }
                     >
-                        <CalendarIcon className="mr-2 h-3 w-3 opacity-70" />
-                        <span className="truncate">
-                            {dateRange?.from ? (
-                                dateRange.to ? (
-                                    <>
-                                        {format(dateRange.from, "MMM d")} - {format(dateRange.to, "MMM d")}
-                                    </>
-                                ) : (
-                                    format(dateRange.from, "MMM d")
-                                )
-                            ) : (
-                                <span>Pick dates</span>
-                            )}
-                        </span>
+                        <CalendarIcon className={`h-3 w-3 ${dateRange ? 'text-primary' : 'opacity-50'}`} />
+                    </Button>
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-5 w-5 p-0 hover:bg-muted"
+                        onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+                    >
+                        {column.getIsSorted() === "asc" ? (
+                            <ArrowUp className="h-3 w-3" />
+                        ) : column.getIsSorted() === "desc" ? (
+                            <ArrowDown className="h-3 w-3" />
+                        ) : (
+                            <ArrowUpDown className="h-3 w-3 opacity-50" />
+                        )}
                     </Button>
 
                     {/* Custom dropdown - only closes on Apply/Cancel click */}
