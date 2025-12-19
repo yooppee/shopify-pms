@@ -37,6 +37,8 @@ interface ListingDraft {
         price?: number
         compare_at_price?: number | null
         cost?: number | null
+        sku?: string
+        vendor?: string
         weight?: number | null
         note?: string
         purchase_link?: string
@@ -325,13 +327,13 @@ export function ListingsDataTable({
         if (!listing) return
 
         const updatedDraftData = {
-            ...listing.draft_data,
+            ...(listing.draft_data as any),
             options: options,
             variants: newVariants
         }
 
         await onUpdateProduct(activeListingId, updatedDraftData)
-        setExpanded(prev => ({ ...prev, [activeListingId]: true }))
+        setExpanded(prev => ({ ...(prev as Record<string, boolean>), [activeListingId]: true }))
         toast.success(`Generated ${newVariants.length} variants!`)
     }, [activeListingId, listings, onUpdateProduct])
 
@@ -640,8 +642,8 @@ export function ListingsDataTable({
                                                 onMouseDown={header.getResizeHandler()}
                                                 onTouchStart={header.getResizeHandler()}
                                                 className={`absolute right-0 top-0 h-full w-px cursor-col-resize select-none touch-none ${header.column.getIsResizing()
-                                                        ? 'bg-primary'
-                                                        : 'bg-border hover:bg-gray-400'
+                                                    ? 'bg-primary'
+                                                    : 'bg-border hover:bg-gray-400'
                                                     }`}
                                             />
                                         )}

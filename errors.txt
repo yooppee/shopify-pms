@@ -1,0 +1,3 @@
+﻿components/listings/data-table.tsx(313,32): error TS2698: Spread types may only be created from object types.
+components/listings/variant-dialog.tsx(5,30): error TS7016: Could not find a declaration file for module 'uuid'. 'C:/Shopify PMS/node_modules/uuid/dist/esm-browser/index.js' implicitly has an 'any' type.
+  Try `npm i --save-dev @types/uuid` if it exists or add a new declaration (.d.ts) file containing `declare module 'uuid';`
