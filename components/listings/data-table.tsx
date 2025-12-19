@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useMemo, useState, useCallback, useEffect } from 'react'
+import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react'
 import {
     useReactTable,
     getCoreRowModel,
@@ -10,6 +10,7 @@ import {
     flexRender,
     SortingState,
     ExpandedState,
+    ColumnSizingState,
 } from '@tanstack/react-table'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -166,6 +167,31 @@ export function ListingsDataTable({
     const [variantDialogOpen, setVariantDialogOpen] = useState(false)
     const [activeListingId, setActiveListingId] = useState<string | null>(null)
     const [isSyncing, setIsSyncing] = useState<string | null>(null)
+    const tableContainerRef = useRef<HTMLDivElement>(null)
+
+    // Column sizing with localStorage persistence
+    const [columnSizing, setColumnSizing] = useState<ColumnSizingState>(() => {
+        if (typeof window !== 'undefined') {
+            const saved = localStorage.getItem('listings-column-sizing')
+            if (saved) {
+                try {
+                    return JSON.parse(saved)
+                } catch { }
+            }
+        }
+        return {}
+    })
+
+    // Persist column sizing to localStorage
+    const handleColumnSizingChange = useCallback((updater: any) => {
+        setColumnSizing(prev => {
+            const newSizing = typeof updater === 'function' ? updater(prev) : updater
+            if (typeof window !== 'undefined') {
+                localStorage.setItem('listings-column-sizing', JSON.stringify(newSizing))
+            }
+            return newSizing
+        })
+    }, [])
 
     // Transform Data for Table
     const data = useMemo(() => {
@@ -341,6 +367,7 @@ export function ListingsDataTable({
             accessorKey: 'is_pushed',
             header: 'If Pushed',
             size: 80,
+            enableResizing: false,
             cell: ({ row }) => (
                 <div className="flex justify-center">
                     <Checkbox
@@ -494,7 +521,8 @@ export function ListingsDataTable({
         {
             id: 'actions',
             header: 'Actions',
-            size: 150,
+            size: 120,
+            enableResizing: false,
             cell: ({ row }) => (
                 <div className="flex items-center gap-1">
                     {!row.original.is_variant ? (
@@ -545,13 +573,16 @@ export function ListingsDataTable({
     const table = useReactTable({
         data,
         columns,
-        state: { sorting, expanded },
+        state: { sorting, expanded, columnSizing },
         onSortingChange: setSorting,
         onExpandedChange: setExpanded,
+        onColumnSizingChange: handleColumnSizingChange,
         getSubRows: (row) => row.subRows,
         getCoreRowModel: getCoreRowModel(),
         getSortedRowModel: getSortedRowModel(),
         getExpandedRowModel: getExpandedRowModel(),
+        enableColumnResizing: true,
+        columnResizeMode: 'onChange',
     })
 
     return (
@@ -582,15 +613,19 @@ export function ListingsDataTable({
             </div>
 
             {/* Table */}
-            <div className="rounded-md border">
-                <Table>
+            <div className="rounded-md border" ref={tableContainerRef}>
+                <Table className="w-full">
                     <TableHeader>
                         {table.getHeaderGroups().map((headerGroup) => (
                             <TableRow key={headerGroup.id}>
                                 {headerGroup.headers.map((header) => (
                                     <TableHead
                                         key={header.id}
-                                        style={{ width: header.getSize() }}
+                                        style={{
+                                            width: header.getSize(),
+                                            position: 'relative',
+                                            userSelect: 'none'
+                                        }}
                                         className="bg-muted/50"
                                     >
                                         {header.isPlaceholder
@@ -599,6 +634,17 @@ export function ListingsDataTable({
                                                 header.column.columnDef.header,
                                                 header.getContext()
                                             )}
+                                        {/* Resize Handle */}
+                                        {header.column.getCanResize() && (
+                                            <div
+                                                onMouseDown={header.getResizeHandler()}
+                                                onTouchStart={header.getResizeHandler()}
+                                                className={`absolute right-0 top-0 h-full w-px cursor-col-resize select-none touch-none ${header.column.getIsResizing()
+                                                        ? 'bg-primary'
+                                                        : 'bg-border hover:bg-gray-400'
+                                                    }`}
+                                            />
+                                        )}
                                     </TableHead>
                                 ))}
                             </TableRow>
