@@ -213,10 +213,21 @@ export async function POST(request: Request) {
                 },
                 inventoryPolicy: 'DENY',
                 compareAtPrice: draftData.compare_at_price || null,
+                optionValues: [
+                    {
+                        optionName: 'Title',
+                        name: 'Default Title'
+                    }
+                ]
             }]
 
-            // Remove productOptions for single variant
-            delete productSetInput.productOptions
+            // Explicitly set productOptions for single variant "Default Title" behavior
+            productSetInput.productOptions = [{
+                name: 'Title',
+                values: [{ name: 'Default Title' }]
+            }]
+
+
         }
 
         console.log('Creating product with productSet:', JSON.stringify(productSetInput, null, 2))
@@ -233,8 +244,9 @@ export async function POST(request: Request) {
 
         if (result.productSet.userErrors?.length > 0) {
             console.error('Shopify User Errors:', result.productSet.userErrors)
+            const errorMessages = result.productSet.userErrors.map((e: any) => e.message).join(', ')
             return NextResponse.json({
-                error: 'Failed to create product',
+                error: `Failed to create product: ${errorMessages}`,
                 details: result.productSet.userErrors
             }, { status: 500 })
         }
