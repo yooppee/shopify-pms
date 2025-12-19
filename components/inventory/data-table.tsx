@@ -2204,8 +2204,8 @@ export function InventoryDataTable({
                                                 key={header.id}
                                                 onDragOver={handleDragOver}
                                                 onDrop={(e) => !isFixedColumn && handleDrop(e, header.column.id, allColumnIds)}
-                                                className={`px-4 py-3 text-left font-medium text-foreground bg-background whitespace-nowrap relative transition-opacity ${isDragging ? 'opacity-50' : ''}`}
-                                                style={{ width: header.getSize() }}
+                                                className={`px-4 py-3 text-left font-medium text-foreground whitespace-nowrap relative transition-opacity ${isDragging ? 'opacity-50' : ''}`}
+                                                style={{ width: header.getSize(), backgroundColor: '#F5F8FB' }}
                                             >
                                                 <span
                                                     draggable={!isFixedColumn && !header.isPlaceholder}
@@ -2224,9 +2224,9 @@ export function InventoryDataTable({
                                                     <div
                                                         onMouseDown={header.getResizeHandler()}
                                                         onTouchStart={header.getResizeHandler()}
-                                                        className={`absolute right-0 top-0 h-full w-1 cursor-col-resize select-none touch-none ${header.column.getIsResizing()
+                                                        className={`absolute right-0 top-0 h-full w-px cursor-col-resize select-none touch-none ${header.column.getIsResizing()
                                                             ? 'bg-primary'
-                                                            : 'bg-muted-foreground/50 hover:bg-primary'
+                                                            : 'bg-border hover:bg-gray-400'
                                                             }`}
                                                     />
                                                 )}
