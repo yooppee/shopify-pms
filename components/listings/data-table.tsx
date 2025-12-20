@@ -30,7 +30,7 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table'
-import { Plus, Trash2, Upload, GitBranch, Save, X, ChevronRight, ChevronDown, Layers, LayoutGrid, Folder } from 'lucide-react'
+import { Plus, Trash2, Upload, GitBranch, Save, X, ChevronRight, ChevronDown, Layers, LayoutGrid, Folder, ArrowLeftRight } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { VariantDialog } from './variant-dialog'
 
@@ -101,10 +101,12 @@ function EditableCell({
     value,
     format = 'text',
     onCommit,
+    className,
 }: {
     value: any
     format?: 'text' | 'currency' | 'number'
     onCommit: (value: any) => void
+    className?: string
 }) {
     const [isEditing, setIsEditing] = useState(false)
     const [editValue, setEditValue] = useState(value?.toString() || '')
@@ -147,14 +149,14 @@ function EditableCell({
                 onBlur={handleBlur}
                 onKeyDown={handleKeyDown}
                 autoFocus
-                className="h-8 font-mono text-xs"
+                className={`h-8 font-mono text-xs ${className || ''}`}
             />
         )
     }
 
     return (
         <div
-            className="h-auto min-h-8 px-2 py-1 font-mono text-xs text-foreground cursor-text hover:bg-muted/50 rounded transition-colors flex items-center"
+            className={`h-auto min-h-8 px-2 py-1 font-mono text-xs text-foreground cursor-text hover:bg-muted/50 rounded transition-colors flex items-center ${className || ''}`}
             onClick={() => setIsEditing(true)}
             title="Click to edit"
         >
@@ -176,6 +178,11 @@ export function ListingsDataTable({
     const [expanded, setExpanded] = useState<ExpandedState>({})
     const [pendingChanges, setPendingChanges] = useState<PendingChange[]>([])
     const [groupBy, setGroupBy] = useState<Record<string, string | null>>({})
+
+    // Currency Converter State
+    const [convAmount, setConvAmount] = useState('')
+    const [convRate, setConvRate] = useState('0.1429') // Default RMB to USD approx (1/7)
+    const [isRmbToUsd, setIsRmbToUsd] = useState(true)
     const [variantDialogOpen, setVariantDialogOpen] = useState(false)
     const [activeListingId, setActiveListingId] = useState<string | null>(null)
     const [isSyncing, setIsSyncing] = useState<string | null>(null)
@@ -704,6 +711,7 @@ export function ListingsDataTable({
                         value={getValueWithPending(row.original, 'purchase_link')}
                         format="text"
                         onCommit={(val) => handleCellChange(row.original.id, 'purchase_link', val, row.original.is_variant, row.original.parentId)}
+                        className="block truncate"
                     />
             ),
         },
@@ -786,6 +794,58 @@ export function ListingsDataTable({
                         Add Product
                     </Button>
 
+                    {/* Currency Converter */}
+                    <div className="flex items-center gap-2 ml-4 p-1 px-2 border rounded-md bg-muted/10">
+                        <div className="flex flex-col gap-1">
+                            <span className="text-[10px] text-muted-foreground font-medium ml-1">
+                                {isRmbToUsd ? 'RMB Input' : 'USD Input'}
+                            </span>
+                            <Input
+                                type="number"
+                                placeholder="Amount"
+                                value={convAmount}
+                                onChange={(e) => setConvAmount(e.target.value)}
+                                className="w-24 h-8 text-sm bg-background"
+                            />
+                        </div>
+
+                        <div className="flex flex-col items-center justify-end gap-1 px-1">
+                            <input
+                                type="number"
+                                value={convRate}
+                                onChange={(e) => setConvRate(e.target.value)}
+                                className="w-12 h-4 text-[10px] text-center border rounded bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+                                title="Exchange Rate"
+                            />
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6 rounded-full hover:bg-muted"
+                                onClick={() => {
+                                    setIsRmbToUsd(!isRmbToUsd)
+                                    const rate = parseFloat(convRate)
+                                    if (!isNaN(rate) && rate !== 0) {
+                                        setConvRate((1 / rate).toFixed(2))
+                                    }
+                                }}
+                                title="Swap Currencies"
+                            >
+                                <ArrowLeftRight className="h-3 w-3" />
+                            </Button>
+                        </div>
+
+                        <div className="flex flex-col gap-1">
+                            <span className="text-[10px] text-muted-foreground font-medium ml-1">
+                                {isRmbToUsd ? 'USD Result' : 'RMB Result'}
+                            </span>
+                            <div className="flex items-center justify-center w-24 h-8 text-sm font-medium bg-muted/30 rounded border text-foreground">
+                                {convAmount && !isNaN(parseFloat(convAmount)) && !isNaN(parseFloat(convRate))
+                                    ? (parseFloat(convAmount) * parseFloat(convRate)).toFixed(2)
+                                    : '-'}
+                            </div>
+                        </div>
+                    </div>
+
                 </div>
                 {pendingChanges.length > 0 && (
                     <div className="flex items-center gap-2">
@@ -806,7 +866,7 @@ export function ListingsDataTable({
 
             {/* Table */}
             <div className="rounded-md border" ref={tableContainerRef}>
-                <Table className="w-full">
+                <Table className="w-full table-fixed">
                     <TableHeader>
                         {table.getHeaderGroups().map((headerGroup) => (
                             <TableRow key={headerGroup.id}>
