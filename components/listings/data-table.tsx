@@ -12,6 +12,13 @@ import {
     ExpandedState,
     ColumnSizingState,
 } from '@tanstack/react-table'
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+    DropdownMenuCheckboxItem,
+} from "@/components/ui/dropdown-menu"
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
@@ -23,7 +30,7 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table'
-import { Plus, Trash2, Upload, GitBranch, Save, X, ChevronRight, ChevronDown } from 'lucide-react'
+import { Plus, Trash2, Upload, GitBranch, Save, X, ChevronRight, ChevronDown, Layers, LayoutGrid, Folder } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { VariantDialog } from './variant-dialog'
 
@@ -55,6 +62,8 @@ interface ListingDraft {
 interface ListingNode {
     id: string
     is_variant: boolean
+    is_group?: boolean // New: identifies if this node is a group header
+    groupValue?: string // New: the specific value of this group (e.g. "Red")
     parentId?: string
     title: string
     sku: string
@@ -166,6 +175,7 @@ export function ListingsDataTable({
     const [sorting, setSorting] = useState<SortingState>([])
     const [expanded, setExpanded] = useState<ExpandedState>({})
     const [pendingChanges, setPendingChanges] = useState<PendingChange[]>([])
+    const [groupBy, setGroupBy] = useState<Record<string, string | null>>({})
     const [variantDialogOpen, setVariantDialogOpen] = useState(false)
     const [activeListingId, setActiveListingId] = useState<string | null>(null)
     const [isSyncing, setIsSyncing] = useState<string | null>(null)
@@ -195,26 +205,120 @@ export function ListingsDataTable({
         })
     }, [])
 
+
+
     // Transform Data for Table
     const data = useMemo(() => {
         return listings.map(listing => {
             const variants = listing.draft_data.variants || []
-            const subRows = variants.map((v: any) => ({
-                id: v.id, // Variant ID
-                is_variant: true,
-                parentId: listing.id,
-                title: v.title,
-                sku: v.sku || '',
-                price: v.price,
-                compare_at_price: v.compare_at_price,
-                cost: v.cost,
-                weight: v.weight,
-                vendor: '', // Variants don't have vendor
-                note: v.note || '',
-                purchase_link: v.purchase_link || '',
-                is_pushed: false,
-                original: v,
-            }))
+            let subRows: ListingNode[] = []
+
+            const currentGroupBy = groupBy[listing.id]
+
+            if (currentGroupBy && (listing.draft_data.options?.length || 0) > 1) {
+                // Grouping Logic
+                const groups: Record<string, any[]> = {}
+                const ungrouped: any[] = []
+
+                variants.forEach((v: any) => {
+                    // Find the option value for the selected group
+                    // Assuming options are stored in listing.draft_data.options and mapped to variants via some mechanism
+                    // Usually variants have 'option1', 'option2', 'option3' corresponding to options[0], options[1], options[2]
+
+                    const optionIndex = listing.draft_data.options?.findIndex(o => o.name === currentGroupBy)
+                    let groupValue = 'Other'
+
+                    if (optionIndex !== undefined && optionIndex !== -1) {
+                        // access v.option1, v.option2, etc. 
+                        // Note: Supabase/Shopify variants usually store option values in 'option1', 'option2', 'option3'
+                        const valueKey = `option${optionIndex + 1}`
+                        groupValue = v[valueKey] || 'Other'
+                    } else {
+                        // The product might not have this option at all
+                        groupValue = 'Other'
+                    }
+
+                    if (!groups[groupValue]) groups[groupValue] = []
+                    groups[groupValue].push(v)
+                })
+
+                // Create Group Nodes
+                Object.entries(groups).forEach(([groupName, groupVariants]) => {
+                    const groupNodeId = `${listing.id}-group-${groupName}`
+
+                    // Helper to calculate aggregate or common values for the group row
+                    // For editable fields, if all variants have same value, show it, else blank? 
+                    // Or just show first? For batch edit, usually blank or explicit placeholder is fine.
+                    // But we want to show existing values if they are uniform? 
+                    // Let's settle on: show value if uniform, else empty/dash.
+                    // IMPORTANT: We need these fields to be editable to support batch update.
+
+                    const getUniformValue = (field: string) => {
+                        const first = groupVariants[0][field]
+                        return groupVariants.every((v: any) => v[field] === first) ? first : null
+                    }
+
+                    const groupSubRows = groupVariants.map((v: any) => ({
+                        id: v.id,
+                        is_variant: true,
+                        parentId: listing.id, // Parent is still the Listing for data purposes
+                        // But for Table structure, it's a child of this group... 
+                        // Wait, tanstack table handles structure via 'subRows'. 
+                        // 'parentId' here is likely used for my logic to find the root listing.
+                        title: v.title,
+                        sku: v.sku || '',
+                        price: v.price,
+                        compare_at_price: v.compare_at_price,
+                        cost: v.cost,
+                        weight: v.weight,
+                        vendor: '',
+                        note: v.note || '',
+                        purchase_link: v.purchase_link || '',
+                        is_pushed: false,
+                        original: v,
+                    })) as ListingNode[]
+
+                    subRows.push({
+                        id: groupNodeId,
+                        is_variant: false,
+                        is_group: true,
+                        groupValue: groupName,
+                        parentId: listing.id, // helpful for propagation
+                        title: groupName,
+                        // Initial values for group row (visual only, until edited)
+                        sku: '', // Mixed SKUs usually
+                        price: getUniformValue('price') || 0,
+                        compare_at_price: getUniformValue('compare_at_price'),
+                        cost: getUniformValue('cost'),
+                        weight: getUniformValue('weight'),
+                        vendor: '',
+                        note: '',
+                        purchase_link: '',
+                        is_pushed: false,
+                        original: {}, // Dummy
+                        subRows: groupSubRows
+                    })
+                })
+
+            } else {
+                // Default Flat Variants
+                subRows = variants.map((v: any) => ({
+                    id: v.id,
+                    is_variant: true,
+                    parentId: listing.id,
+                    title: v.title,
+                    sku: v.sku || '',
+                    price: v.price,
+                    compare_at_price: v.compare_at_price,
+                    cost: v.cost,
+                    weight: v.weight,
+                    vendor: '',
+                    note: v.note || '',
+                    purchase_link: v.purchase_link || '',
+                    is_pushed: false,
+                    original: v,
+                }))
+            }
 
             return {
                 id: listing.id,
@@ -233,11 +337,43 @@ export function ListingsDataTable({
                 subRows: subRows.length > 0 ? subRows : undefined
             } as ListingNode
         })
-    }, [listings])
+    }, [listings, groupBy])
 
     // Handle cell value change
-    const handleCellChange = useCallback((id: string, field: string, value: any, isVariant: boolean, parentId?: string) => {
-        // For variants, we need to track both their ID and their parent ID to construct the update later
+    const handleCellChange = useCallback((id: string, field: string, value: any, isVariant: boolean, parentId?: string, isGroup?: boolean, groupSubRows?: ListingNode[]) => {
+
+        // Handle Group Batch Edit
+        if (isGroup && groupSubRows && parentId) {
+            // We need to apply changes to ALL subRows of this group
+            setPendingChanges(prev => {
+                let newChanges = [...prev]
+
+                // 1. Update/Create pending change for the group row itself (visual feedback)
+                // Note: Group IDs are synthetic/local, pending changes logic usually expects persistent IDs?
+                // No, my logic uses IDs to map to pending display. So this is fine for visual.
+                // But wait, the SAVE logic iterates `pendingChanges`. 
+                // If I put a pending change for "group-id", save logic won't know what to do with it unless I handle it.
+                // BETTER STRATEGY: 
+                // Don't store pending change for the "group" ID fundamentally. 
+                // Store pending changes for ALL the child variants.
+                // And for visual feedback on the group row, the `getValueWithPending` can compute it from children or I can store a group change too just for UI.
+
+                // Let's strictly update children.
+                groupSubRows.forEach(child => {
+                    const changeId = child.id ? `${parentId}|${child.id}` : child.id
+                    // Remove existing pending change for this field on this child
+                    newChanges = newChanges.filter(p => !(p.id === changeId && p.field === field))
+                    // Add new change
+                    newChanges.push({ id: changeId, field, value })
+                })
+
+                return newChanges
+            })
+            // Optionally trigger a re-render or toast? No need.
+            return
+        }
+
+        // Normal Edit
         const changeId = isVariant ? `${parentId}|${id}` : id
 
         setPendingChanges(prev => {
@@ -248,6 +384,21 @@ export function ListingsDataTable({
 
     // Get value with pending changes applied
     const getValueWithPending = useCallback((row: ListingNode, field: keyof ListingNode) => {
+        if (row.is_group && row.subRows) {
+            // Compute dynamic value for group row based on children's pending state
+            // If all children have same pending (or committed) value, return it.
+            // Else return placeholder (or mixed/empty).
+            const values = row.subRows.map(child => {
+                const changeId = `${child.parentId}|${child.id}`
+                const pending = pendingChanges.find(p => p.id === changeId && p.field === field)
+                return pending !== undefined ? pending.value : child[field]
+            })
+
+            const first = values[0]
+            const allSame = values.every(v => v === first)
+            return allSame ? first : '' // Show blank if mixed to indicate "varies" or allow overwrite
+        }
+
         const changeId = row.is_variant ? `${row.parentId}|${row.id}` : row.id
         const pending = pendingChanges.find(p => p.id === changeId && p.field === field)
         return pending !== undefined ? pending.value : row[field]
@@ -399,22 +550,56 @@ export function ListingsDataTable({
                         </button>
                     )}
                     <span style={{ paddingLeft: row.depth * 20 + 'px' }}>
-                        {row.original.is_variant ? (
+                        {row.original.is_group ? (
+                            <span className="flex items-center gap-2 font-medium text-foreground">
+                                <Folder className="h-4 w-4 text-blue-500 fill-blue-500/20" />
+                                {row.original.groupValue}
+                                <span className="text-xs text-muted-foreground font-normal">
+                                    ({row.original.subRows?.length} variants)
+                                </span>
+                            </span>
+                        ) : row.original.is_variant ? (
                             <span className="text-sm px-2 py-1 text-muted-foreground">
                                 {row.original.title}
                             </span>
                         ) : (
-                            <EditableCell
-                                value={getValueWithPending(row.original, 'title')}
-                                format="text"
-                                onCommit={(val) => handleCellChange(
-                                    row.original.id,
-                                    'title',
-                                    val,
-                                    row.original.is_variant,
-                                    row.original.parentId
+                            <div className="flex items-center gap-2 flex-1 min-w-0">
+                                <EditableCell
+                                    value={getValueWithPending(row.original, 'title')}
+                                    format="text"
+                                    onCommit={(val) => handleCellChange(
+                                        row.original.id,
+                                        'title',
+                                        val,
+                                        row.original.is_variant,
+                                        row.original.parentId,
+                                        row.original.is_group,
+                                        row.original.subRows
+                                    )}
+                                />
+                                {/* Group By Control for SPU */}
+                                {row.original.original?.draft_data?.options?.length > 1 && (
+                                    <DropdownMenu>
+                                        <DropdownMenuTrigger asChild>
+                                            <Button variant="ghost" size="sm" className="h-6 px-2 text-xs text-muted-foreground hover:bg-muted ml-auto whitespace-nowrap">
+                                                <Layers className="h-3 w-3 mr-1" />
+                                                {groupBy[row.original.id] ? groupBy[row.original.id] : 'Group'}
+                                                <ChevronDown className="h-3 w-3 ml-1 opacity-50" />
+                                            </Button>
+                                        </DropdownMenuTrigger>
+                                        <DropdownMenuContent align="end">
+                                            <DropdownMenuItem onClick={() => setGroupBy(prev => ({ ...prev, [row.original.id]: null }))}>
+                                                None
+                                            </DropdownMenuItem>
+                                            {row.original.original.draft_data.options.map((opt: any) => (
+                                                <DropdownMenuItem key={opt.name} onClick={() => setGroupBy(prev => ({ ...prev, [row.original.id]: opt.name }))}>
+                                                    {opt.name}
+                                                </DropdownMenuItem>
+                                            ))}
+                                        </DropdownMenuContent>
+                                    </DropdownMenu>
                                 )}
-                            />
+                            </div>
                         )}
                     </span>
                 </div>
@@ -428,7 +613,7 @@ export function ListingsDataTable({
                 <EditableCell
                     value={getValueWithPending(row.original, 'price')}
                     format="currency"
-                    onCommit={(val) => handleCellChange(row.original.id, 'price', val, row.original.is_variant, row.original.parentId)}
+                    onCommit={(val) => handleCellChange(row.original.id, 'price', val, row.original.is_variant, row.original.parentId, row.original.is_group, row.original.subRows)}
                 />
             ),
         },
@@ -440,7 +625,7 @@ export function ListingsDataTable({
                 <EditableCell
                     value={getValueWithPending(row.original, 'compare_at_price')}
                     format="currency"
-                    onCommit={(val) => handleCellChange(row.original.id, 'compare_at_price', val, row.original.is_variant, row.original.parentId)}
+                    onCommit={(val) => handleCellChange(row.original.id, 'compare_at_price', val, row.original.is_variant, row.original.parentId, row.original.is_group, row.original.subRows)}
                 />
             ),
         },
@@ -452,7 +637,7 @@ export function ListingsDataTable({
                 <EditableCell
                     value={getValueWithPending(row.original, 'cost')}
                     format="currency"
-                    onCommit={(val) => handleCellChange(row.original.id, 'cost', val, row.original.is_variant, row.original.parentId)}
+                    onCommit={(val) => handleCellChange(row.original.id, 'cost', val, row.original.is_variant, row.original.parentId, row.original.is_group, row.original.subRows)}
                 />
             ),
         },
@@ -464,7 +649,7 @@ export function ListingsDataTable({
                 <EditableCell
                     value={getValueWithPending(row.original, 'sku')}
                     format="text"
-                    onCommit={(val) => handleCellChange(row.original.id, 'sku', val, row.original.is_variant, row.original.parentId)}
+                    onCommit={(val) => handleCellChange(row.original.id, 'sku', val, row.original.is_variant, row.original.parentId, row.original.is_group, row.original.subRows)}
                 />
             ),
         },
@@ -473,7 +658,7 @@ export function ListingsDataTable({
             header: 'Vendor',
             size: 120,
             cell: ({ row }) => (
-                row.original.is_variant ? (
+                row.original.is_variant || row.original.is_group ? ( // Disable vendor for variants AND groups (usually vendor is product-level)
                     <span className="text-muted-foreground">-</span>
                 ) : (
                     <EditableCell
@@ -492,7 +677,7 @@ export function ListingsDataTable({
                 <EditableCell
                     value={getValueWithPending(row.original, 'weight')}
                     format="number"
-                    onCommit={(val) => handleCellChange(row.original.id, 'weight', val, row.original.is_variant, row.original.parentId)}
+                    onCommit={(val) => handleCellChange(row.original.id, 'weight', val, row.original.is_variant, row.original.parentId, row.original.is_group, row.original.subRows)}
                 />
             ),
         },
@@ -500,12 +685,13 @@ export function ListingsDataTable({
             accessorKey: 'note',
             header: 'Note',
             size: 150,
-            cell: ({ row }) => (
-                <EditableCell
-                    value={getValueWithPending(row.original, 'note')}
-                    format="text"
-                    onCommit={(val) => handleCellChange(row.original.id, 'note', val, row.original.is_variant, row.original.parentId)}
-                />
+            cell: ({ row }) => ( // Disable note for groups? Or allow it? Let's allow if useful, but maybe less critical.
+                row.original.is_group ? <span className="text-muted-foreground">-</span> :
+                    <EditableCell
+                        value={getValueWithPending(row.original, 'note')}
+                        format="text"
+                        onCommit={(val) => handleCellChange(row.original.id, 'note', val, row.original.is_variant, row.original.parentId)}
+                    />
             ),
         },
         {
@@ -513,11 +699,12 @@ export function ListingsDataTable({
             header: 'Purchase Link',
             size: 150,
             cell: ({ row }) => (
-                <EditableCell
-                    value={getValueWithPending(row.original, 'purchase_link')}
-                    format="text"
-                    onCommit={(val) => handleCellChange(row.original.id, 'purchase_link', val, row.original.is_variant, row.original.parentId)}
-                />
+                row.original.is_group ? <span className="text-muted-foreground">-</span> :
+                    <EditableCell
+                        value={getValueWithPending(row.original, 'purchase_link')}
+                        format="text"
+                        onCommit={(val) => handleCellChange(row.original.id, 'purchase_link', val, row.original.is_variant, row.original.parentId)}
+                    />
             ),
         },
         {
@@ -527,15 +714,17 @@ export function ListingsDataTable({
             enableResizing: false,
             cell: ({ row }) => (
                 <div className="flex items-center gap-1">
-                    {!row.original.is_variant ? (
+                    {row.original.is_group ? (
+                        <span className="text-muted-foreground text-xs">Group</span>
+                    ) : !row.original.is_variant ? (
                         <>
                             <Button
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => handleCreateVariant(row.original.id)}
-                                title="Create Variant"
+                                title="Edit Options"
                             >
-                                <GitBranch className="h-4 w-4" />
+                                <LayoutGrid className="h-4 w-4" />
                             </Button>
                             <Button
                                 variant="ghost"
@@ -567,9 +756,9 @@ export function ListingsDataTable({
                             <Trash2 className="h-4 w-4" />
                         </Button>
                     )}
-                </div>
+                </div >
             ),
-        },
+        }
     ], [getValueWithPending, handleCellChange, handleCreateVariant, onDeleteProduct, handleSyncToShopify])
 
     const table = useReactTable({
@@ -596,6 +785,7 @@ export function ListingsDataTable({
                         <Plus className="mr-2 h-4 w-4" />
                         Add Product
                     </Button>
+
                 </div>
                 {pendingChanges.length > 0 && (
                     <div className="flex items-center gap-2">
