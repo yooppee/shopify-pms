@@ -56,6 +56,8 @@ import {
 } from '@/components/ui/dialog'
 import { useState } from 'react'
 
+import { v4 as uuidv4 } from 'uuid'
+
 export default function ListingsPage() {
     const queryClient = useQueryClient()
     const [deleteId, setDeleteId] = useState<string | null>(null)
@@ -152,6 +154,7 @@ export default function ListingsPage() {
     }
 
     const handleDuplicateProduct = async (listing: ListingDraft) => {
+        console.log('DEBUG: handleDuplicateProduct called for:', listing.id)
         const newDraftData = { ...listing.draft_data }
 
         // Append (Copy) to title
@@ -163,19 +166,30 @@ export default function ListingsPage() {
 
         // Ensure standard fields are preserved
         delete (newDraftData as any).id // Reset ID
+        delete newDraftData.is_pushed // Reset pushed status
+        delete (newDraftData as any).shopify_product_id // Remove Shopify ID reference
 
         // Variants handling: We need to reset IDs for variants as well
         if (newDraftData.variants && Array.isArray(newDraftData.variants)) {
+            console.log('DEBUG: Mapping variants, count:', newDraftData.variants.length)
             newDraftData.variants = newDraftData.variants.map((v: any) => {
                 const newV = { ...v }
-                delete newV.id
+                // Use uuidv4 for robust unique IDs
+                newV.id = uuidv4()
                 delete newV.product_id
+                delete newV.inventory_item_id
+                delete newV.admin_graphql_api_id
+                delete newV.image_id
                 return newV
             })
+            console.log('DEBUG: Variants after mapping:', JSON.stringify(newDraftData.variants))
+        } else {
+            console.log('DEBUG: No variants array found in draft_data')
         }
 
         try {
-            await createMutation.mutateAsync(newDraftData)
+            const result = await createMutation.mutateAsync(newDraftData)
+            return result.listing
         } catch (error) {
             // Error handled by mutation
         }

@@ -80,6 +80,24 @@ export async function POST(request: NextRequest) {
             options: body.options || [],
         }
 
+        // Enforce IDs on variants if missing (Safety Net)
+        if (draftData.variants && Array.isArray(draftData.variants)) {
+            draftData.variants = draftData.variants.map((v: any) => {
+                if (!v.id) {
+                    // Simple random ID generator for server-side safety
+                    v.id = crypto.randomUUID()
+                    console.log('DEBUG API: Generated missing variant ID:', v.id)
+                }
+                return v
+            })
+        }
+
+        console.log('DEBUG API: Received variants count:', draftData.variants.length)
+        if (draftData.variants.length > 0) {
+            console.log('DEBUG API: First variant ID:', draftData.variants[0].id)
+            console.log('DEBUG API: First variant full:', JSON.stringify(draftData.variants[0], null, 2))
+        }
+
         const insertPayload = {
             product_id: null,
             draft_data: draftData,

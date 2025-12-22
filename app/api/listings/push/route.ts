@@ -68,6 +68,40 @@ const INVENTORY_ITEM_UPDATE_MUTATION = `
   }
 `
 
+// GraphQL query for fetching locations
+const LOCATIONS_QUERY = `
+  query {
+    locations(first: 5) {
+      edges {
+        node {
+          id
+          name
+          isActive
+        }
+      }
+    }
+  }
+`
+
+// GraphQL mutation for setting inventory quantities
+const INVENTORY_SET_HAND_QUANTITIES_MUTATION = `
+  mutation inventorySetHandQuantities($input: InventorySetHandQuantitiesInput!) {
+    inventorySetHandQuantities(input: $input) {
+      inventoryAdjustmentGroup {
+        reason
+        changes {
+          delta
+          quantity
+        }
+      }
+      userErrors {
+        field
+        message
+      }
+    }
+  }
+`
+
 async function shopifyGraphQL(shopDomain: string, accessToken: string, query: string, variables: any) {
     const response = await fetch(`https://${shopDomain}/admin/api/2024-01/graphql.json`, {
         method: 'POST',
@@ -137,6 +171,8 @@ export async function POST(request: Request) {
 
         // Track costs for later update
         const variantCosts: { index: number; cost: number }[] = []
+        // Track inventory for later update
+        const variantStock: { index: number; quantity: number }[] = []
 
         // Handle Options
         if (draftData.options && Array.isArray(draftData.options) && draftData.options.length > 0) {
@@ -151,6 +187,9 @@ export async function POST(request: Request) {
             productSetInput.variants = draftData.variants.map((v: any, index: number) => {
                 if (v.cost != null) {
                     variantCosts.push({ index, cost: v.cost })
+                }
+                if (v.inventory_quantity != null) {
+                    variantStock.push({ index, quantity: v.inventory_quantity })
                 }
 
                 const variantInput: any = {
@@ -198,6 +237,9 @@ export async function POST(request: Request) {
             // Single variant product (no options)
             if (draftData.cost != null) {
                 variantCosts.push({ index: 0, cost: draftData.cost })
+            }
+            if (draftData.inventory_quantity != null) {
+                variantStock.push({ index: 0, quantity: draftData.inventory_quantity })
             }
 
             productSetInput.variants = [{
@@ -289,7 +331,51 @@ export async function POST(request: Request) {
             }
         }
 
-        // 6. Update Database Record
+        // 6. Update Inventory Quantities
+        if (variantStock.length > 0) {
+            console.log('Fetching locations for inventory sync...')
+            try {
+                const locationsData = await shopifyGraphQL(shop_domain, access_token, LOCATIONS_QUERY, {})
+                const locationId = locationsData.locations.edges[0]?.node?.id
+
+                if (locationId) {
+                    const quantitiesInput = variantStock.map(stockEntry => {
+                        const variant = createdVariants[stockEntry.index]
+                        if (variant?.inventoryItem?.id) {
+                            return {
+                                inventoryItemId: variant.inventoryItem.id,
+                                locationId: locationId,
+                                quantity: stockEntry.quantity
+                            }
+                        }
+                        return null
+                    }).filter(Boolean)
+
+                    if (quantitiesInput.length > 0) {
+                        console.log('Syncing inventory quantities:', quantitiesInput)
+                        const inventoryResult = await shopifyGraphQL(
+                            shop_domain,
+                            access_token,
+                            INVENTORY_SET_HAND_QUANTITIES_MUTATION,
+                            {
+                                input: {
+                                    reason: 'correction',
+                                    ignoreCompareQuantity: true,
+                                    quantities: quantitiesInput
+                                }
+                            }
+                        )
+                        console.log('Inventory sync result:', JSON.stringify(inventoryResult, null, 2))
+                    }
+                } else {
+                    console.error('No location found to sync inventory')
+                }
+            } catch (invError) {
+                console.error('Failed to sync inventory:', invError)
+            }
+        }
+
+        // 7. Update Database Record
         const shopifyIdMatch = shopifyProduct.id.match(/\d+$/)
         const shopifyNumericId = shopifyIdMatch ? shopifyIdMatch[0] : shopifyProduct.id
 

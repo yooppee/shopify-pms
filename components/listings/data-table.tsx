@@ -44,6 +44,7 @@ export interface ListingDraft {
         price?: number
         compare_at_price?: number | null
         cost?: number | null
+        inventory_quantity?: number
         sku?: string
         vendor?: string
         weight?: number | null
@@ -70,6 +71,7 @@ interface ListingNode {
     price: number
     compare_at_price: number | null
     cost: number | null
+    inventory_quantity: number
     weight: number | null
     vendor: string
     note: string
@@ -77,6 +79,7 @@ interface ListingNode {
     is_pushed?: boolean
     original: ListingDraft | any
     subRows?: ListingNode[]
+    variantId?: string // New: specifically for tracking the real variant ID separate from the table row ID
 }
 
 // Pending change interface
@@ -92,7 +95,7 @@ interface ListingsDataTableProps {
     onUpdateProduct: (id: string, updates: any) => void
     onDeleteProduct: (id: string) => void
     onDeleteVariant?: (variantId: string, parentId: string) => void
-    onDuplicateProduct?: (listing: ListingDraft) => void
+    onDuplicateProduct?: (listing: ListingDraft) => Promise<ListingDraft | void>
     onSyncSuccess?: () => void
     isLoading?: boolean
 }
@@ -264,7 +267,13 @@ export function ListingsDataTable({
     // Transform Data for Table
     const data = useMemo(() => {
         return listings.map(listing => {
-            const variants = listing.draft_data.variants || []
+            if (listing.draft_data.title?.includes('(Copy)')) {
+                console.log('DEBUG: Duplicated listing variants:', listing.draft_data.variants)
+            }
+            const variants = (listing.draft_data.variants || []).map((v: any, idx: number) => ({
+                ...v,
+                _originalIndex: idx
+            }))
             let subRows: ListingNode[] = []
 
             const currentGroupBy = groupBy[listing.id]
@@ -312,25 +321,27 @@ export function ListingsDataTable({
                         return groupVariants.every((v: any) => v[field] === first) ? first : null
                     }
 
-                    const groupSubRows = groupVariants.map((v: any) => ({
-                        id: v.id,
-                        is_variant: true,
-                        parentId: listing.id, // Parent is still the Listing for data purposes
-                        // But for Table structure, it's a child of this group... 
-                        // Wait, tanstack table handles structure via 'subRows'. 
-                        // 'parentId' here is likely used for my logic to find the root listing.
-                        title: v.title,
-                        sku: v.sku || '',
-                        price: v.price,
-                        compare_at_price: v.compare_at_price,
-                        cost: v.cost,
-                        weight: v.weight,
-                        vendor: '',
-                        note: v.note || '',
-                        purchase_link: v.purchase_link || '',
-                        is_pushed: false,
-                        original: v,
-                    })) as ListingNode[]
+                    const groupSubRows = groupVariants.map((v: any) => {
+                        const effectiveVariantId = v.id || `fallback-${listing.id}-${v._originalIndex}`
+                        return {
+                            id: `${listing.id}-${effectiveVariantId}`, // Unique Table Row ID
+                            variantId: effectiveVariantId, // Data ID
+                            is_variant: true,
+                            parentId: listing.id,
+                            title: v.title,
+                            sku: v.sku || '',
+                            price: v.price,
+                            compare_at_price: v.compare_at_price,
+                            cost: v.cost,
+                            inventory_quantity: v.inventory_quantity || 0,
+                            weight: v.weight,
+                            vendor: '',
+                            note: v.note || '',
+                            purchase_link: v.purchase_link || '',
+                            is_pushed: false,
+                            original: v,
+                        }
+                    }) as ListingNode[]
 
                     subRows.push({
                         id: groupNodeId,
@@ -344,6 +355,7 @@ export function ListingsDataTable({
                         price: getUniformValue('price') || 0,
                         compare_at_price: getUniformValue('compare_at_price'),
                         cost: getUniformValue('cost'),
+                        inventory_quantity: getUniformValue('inventory_quantity') || 0,
                         weight: getUniformValue('weight'),
                         vendor: '',
                         note: '',
@@ -356,22 +368,27 @@ export function ListingsDataTable({
 
             } else {
                 // Default Flat Variants
-                subRows = variants.map((v: any) => ({
-                    id: v.id,
-                    is_variant: true,
-                    parentId: listing.id,
-                    title: v.title,
-                    sku: v.sku || '',
-                    price: v.price,
-                    compare_at_price: v.compare_at_price,
-                    cost: v.cost,
-                    weight: v.weight,
-                    vendor: '',
-                    note: v.note || '',
-                    purchase_link: v.purchase_link || '',
-                    is_pushed: false,
-                    original: v,
-                }))
+                subRows = variants.map((v: any) => {
+                    const effectiveVariantId = v.id || `fallback-${listing.id}-${v._originalIndex}`
+                    return {
+                        id: `${listing.id}-${effectiveVariantId}`, // Unique Table Row ID
+                        variantId: effectiveVariantId, // Data ID
+                        is_variant: true,
+                        parentId: listing.id,
+                        title: v.title,
+                        sku: v.sku || '',
+                        price: v.price,
+                        compare_at_price: v.compare_at_price,
+                        cost: v.cost,
+                        inventory_quantity: v.inventory_quantity || 0,
+                        weight: v.weight,
+                        vendor: '',
+                        note: v.note || '',
+                        purchase_link: v.purchase_link || '',
+                        is_pushed: false,
+                        original: v,
+                    }
+                })
             }
 
             return {
@@ -382,6 +399,7 @@ export function ListingsDataTable({
                 price: listing.draft_data.price || 0,
                 compare_at_price: listing.draft_data.compare_at_price || null,
                 cost: listing.draft_data.cost || null,
+                inventory_quantity: listing.draft_data.inventory_quantity || 0,
                 weight: listing.draft_data.weight || null,
                 vendor: listing.draft_data.vendor || '',
                 note: listing.draft_data.note || '',
@@ -395,6 +413,7 @@ export function ListingsDataTable({
 
     // Handle cell value change
     const handleCellChange = useCallback((id: string, field: string, value: any, isVariant: boolean, parentId?: string, isGroup?: boolean, groupSubRows?: ListingNode[]) => {
+        console.log('DEBUG: handleCellChange', { id, field, value, isVariant, parentId, isGroup })
 
         // Handle Group Batch Edit
         if (isGroup && groupSubRows && parentId) {
@@ -414,7 +433,12 @@ export function ListingsDataTable({
 
                 // Let's strictly update children.
                 groupSubRows.forEach(child => {
-                    const changeId = child.id ? `${parentId}|${child.id}` : child.id
+                    const targetId = child.variantId || child.id
+                    if (!targetId) {
+                        console.warn('Group child missing ID, skipping:', child)
+                        return
+                    }
+                    const changeId = `${parentId}|${targetId}`
                     // Remove existing pending change for this field on this child
                     newChanges = newChanges.filter(p => !(p.id === changeId && p.field === field))
                     // Add new change
@@ -428,6 +452,10 @@ export function ListingsDataTable({
         }
 
         // Normal Edit
+        if (isVariant && !id) {
+            console.warn('Variant edit attempted without valid ID, skipping')
+            return
+        }
         const changeId = isVariant ? `${parentId}|${id}` : id
 
         setPendingChanges(prev => {
@@ -443,7 +471,8 @@ export function ListingsDataTable({
             // If all children have same pending (or committed) value, return it.
             // Else return placeholder (or mixed/empty).
             const values = row.subRows.map(child => {
-                const changeId = `${child.parentId}|${child.id}`
+                const childId = child.variantId || child.id
+                const changeId = `${child.parentId}|${childId}`
                 const pending = pendingChanges.find(p => p.id === changeId && p.field === field)
                 return pending !== undefined ? pending.value : child[field]
             })
@@ -453,7 +482,8 @@ export function ListingsDataTable({
             return allSame ? first : '' // Show blank if mixed to indicate "varies" or allow overwrite
         }
 
-        const changeId = row.is_variant ? `${row.parentId}|${row.id}` : row.id
+        const targetId = row.variantId || row.id
+        const changeId = row.is_variant ? `${row.parentId}|${targetId}` : row.id
         const pending = pendingChanges.find(p => p.id === changeId && p.field === field)
         return pending !== undefined ? pending.value : row[field]
     }, [pendingChanges])
@@ -486,9 +516,12 @@ export function ListingsDataTable({
                 const newDraftData = { ...rootListing.draft_data, ...changes.spu }
 
                 if (Object.keys(changes.variants).length > 0) {
-                    newDraftData.variants = (rootListing.draft_data.variants || []).map((v: any) => {
-                        const vUpdates = changes.variants[v.id]
-                        return vUpdates ? { ...v, ...vUpdates } : v
+                    newDraftData.variants = (rootListing.draft_data.variants || []).map((v: any, index: number) => {
+                        const effectiveId = v.id || `fallback-${rootListing.id}-${index}`
+                        const vUpdates = changes.variants[effectiveId]
+                        // If we used a fallback ID, we should try to save it as the real ID now to fix the data
+                        const extraUpdates = vUpdates && !v.id ? { id: effectiveId } : {}
+                        return vUpdates ? { ...v, ...vUpdates, ...extraUpdates } : v
                     })
                 }
 
@@ -622,7 +655,7 @@ export function ListingsDataTable({
                                     value={getValueWithPending(row.original, 'title')}
                                     format="text"
                                     onCommit={(val) => handleCellChange(
-                                        row.original.id,
+                                        row.original.variantId || row.original.id,
                                         'title',
                                         val,
                                         row.original.is_variant,
@@ -667,7 +700,7 @@ export function ListingsDataTable({
                 <EditableCell
                     value={getValueWithPending(row.original, 'price')}
                     format="currency"
-                    onCommit={(val) => handleCellChange(row.original.id, 'price', val, row.original.is_variant, row.original.parentId, row.original.is_group, row.original.subRows)}
+                    onCommit={(val) => handleCellChange(row.original.variantId || row.original.id, 'price', val, row.original.is_variant, row.original.parentId, row.original.is_group, row.original.subRows)}
                 />
             ),
         },
@@ -679,7 +712,7 @@ export function ListingsDataTable({
                 <EditableCell
                     value={getValueWithPending(row.original, 'compare_at_price')}
                     format="currency"
-                    onCommit={(val) => handleCellChange(row.original.id, 'compare_at_price', val, row.original.is_variant, row.original.parentId, row.original.is_group, row.original.subRows)}
+                    onCommit={(val) => handleCellChange(row.original.variantId || row.original.id, 'compare_at_price', val, row.original.is_variant, row.original.parentId, row.original.is_group, row.original.subRows)}
                 />
             ),
         },
@@ -691,7 +724,7 @@ export function ListingsDataTable({
                 <EditableCell
                     value={getValueWithPending(row.original, 'cost')}
                     format="currency"
-                    onCommit={(val) => handleCellChange(row.original.id, 'cost', val, row.original.is_variant, row.original.parentId, row.original.is_group, row.original.subRows)}
+                    onCommit={(val) => handleCellChange(row.original.variantId || row.original.id, 'cost', val, row.original.is_variant, row.original.parentId, row.original.is_group, row.original.subRows)}
                 />
             ),
         },
@@ -703,7 +736,19 @@ export function ListingsDataTable({
                 <EditableCell
                     value={getValueWithPending(row.original, 'sku')}
                     format="text"
-                    onCommit={(val) => handleCellChange(row.original.id, 'sku', val, row.original.is_variant, row.original.parentId, row.original.is_group, row.original.subRows)}
+                    onCommit={(val) => handleCellChange(row.original.variantId || row.original.id, 'sku', val, row.original.is_variant, row.original.parentId, row.original.is_group, row.original.subRows)}
+                />
+            ),
+        },
+        {
+            accessorKey: 'inventory_quantity',
+            header: 'Inventory',
+            size: 90,
+            cell: ({ row }) => (
+                <EditableCell
+                    value={getValueWithPending(row.original, 'inventory_quantity')}
+                    format="number"
+                    onCommit={(val) => handleCellChange(row.original.variantId || row.original.id, 'inventory_quantity', val, row.original.is_variant, row.original.parentId, row.original.is_group, row.original.subRows)}
                 />
             ),
         },
@@ -718,7 +763,7 @@ export function ListingsDataTable({
                     <EditableCell
                         value={getValueWithPending(row.original, 'vendor')}
                         format="text"
-                        onCommit={(val) => handleCellChange(row.original.id, 'vendor', val, row.original.is_variant, row.original.parentId)}
+                        onCommit={(val) => handleCellChange(row.original.variantId || row.original.id, 'vendor', val, row.original.is_variant, row.original.parentId)}
                     />
                 )
             ),
@@ -731,7 +776,7 @@ export function ListingsDataTable({
                 <EditableCell
                     value={getValueWithPending(row.original, 'weight')}
                     format="number"
-                    onCommit={(val) => handleCellChange(row.original.id, 'weight', val, row.original.is_variant, row.original.parentId, row.original.is_group, row.original.subRows)}
+                    onCommit={(val) => handleCellChange(row.original.variantId || row.original.id, 'weight', val, row.original.is_variant, row.original.parentId, row.original.is_group, row.original.subRows)}
                 />
             ),
         },
@@ -744,7 +789,7 @@ export function ListingsDataTable({
                     <EditableCell
                         value={getValueWithPending(row.original, 'note')}
                         format="text"
-                        onCommit={(val) => handleCellChange(row.original.id, 'note', val, row.original.is_variant, row.original.parentId)}
+                        onCommit={(val) => handleCellChange(row.original.variantId || row.original.id, 'note', val, row.original.is_variant, row.original.parentId)}
                     />
             ),
         },
@@ -757,7 +802,7 @@ export function ListingsDataTable({
                     <EditableCell
                         value={getValueWithPending(row.original, 'purchase_link')}
                         format="text"
-                        onCommit={(val) => handleCellChange(row.original.id, 'purchase_link', val, row.original.is_variant, row.original.parentId)}
+                        onCommit={(val) => handleCellChange(row.original.variantId || row.original.id, 'purchase_link', val, row.original.is_variant, row.original.parentId)}
                         className="block truncate"
                     />
             ),
@@ -785,7 +830,18 @@ export function ListingsDataTable({
                             <Button
                                 variant="ghost"
                                 size="sm"
-                                onClick={() => onDuplicateProduct?.(row.original.original)}
+                                onClick={async () => {
+                                    if (onDuplicateProduct) {
+                                        const newListing = await onDuplicateProduct(row.original.original)
+                                        if (newListing && groupBy[row.original.id]) {
+                                            setGroupBy(prev => ({ ...prev, [newListing.id]: groupBy[row.original.id] }))
+                                            setExpanded(prev => {
+                                                if (prev === true) return true
+                                                return { ...prev, [newListing.id]: true }
+                                            })
+                                        }
+                                    }
+                                }}
                                 title="Duplicate"
                                 className="h-6 w-6 p-0"
                             >
