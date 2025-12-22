@@ -181,8 +181,53 @@ export function ListingsDataTable({
 
     // Currency Converter State
     const [convAmount, setConvAmount] = useState('')
-    const [convRate, setConvRate] = useState('0.1429') // Default RMB to USD approx (1/7)
+    const [convRate, setConvRate] = useState('0.1429')
     const [isRmbToUsd, setIsRmbToUsd] = useState(true)
+
+    // Load currency settings from localStorage
+    useEffect(() => {
+        if (typeof window === 'undefined') return
+
+        try {
+            const savedDirection = localStorage.getItem('currency-is-rmb-to-usd')
+            const loadedIsRmbToUsd = savedDirection === null ? true : savedDirection === 'true'
+            setIsRmbToUsd(loadedIsRmbToUsd)
+
+            const savedRate = localStorage.getItem(loadedIsRmbToUsd ? 'currency-rate-rmb-usd' : 'currency-rate-usd-rmb')
+            if (savedRate) {
+                setConvRate(savedRate)
+            } else {
+                setConvRate(loadedIsRmbToUsd ? '0.1429' : '7.0000')
+            }
+        } catch (e) {
+            console.error('Failed to load currency settings', e)
+        }
+    }, [])
+
+    const handleRateChange = (newRate: string) => {
+        setConvRate(newRate)
+        if (typeof window !== 'undefined') {
+            localStorage.setItem(isRmbToUsd ? 'currency-rate-rmb-usd' : 'currency-rate-usd-rmb', newRate)
+        }
+    }
+
+    const handleSwapCurrency = () => {
+        const currentRate = parseFloat(convRate)
+        if (isNaN(currentRate) || currentRate === 0) return
+
+        const newDirection = !isRmbToUsd
+        setIsRmbToUsd(newDirection)
+
+        // Use 6 decimal places to prevent precision loss during repeated swaps
+        // 2 decimal places causes significant drift (e.g. 7 -> 0.14 -> 7.14)
+        const newRate = (1 / currentRate).toFixed(6)
+
+        if (typeof window !== 'undefined') {
+            localStorage.setItem('currency-is-rmb-to-usd', String(newDirection))
+            localStorage.setItem(newDirection ? 'currency-rate-rmb-usd' : 'currency-rate-usd-rmb', newRate)
+        }
+        setConvRate(newRate)
+    }
     const [variantDialogOpen, setVariantDialogOpen] = useState(false)
     const [activeListingId, setActiveListingId] = useState<string | null>(null)
     const [isSyncing, setIsSyncing] = useState<string | null>(null)
@@ -813,7 +858,7 @@ export function ListingsDataTable({
                             <input
                                 type="number"
                                 value={convRate}
-                                onChange={(e) => setConvRate(e.target.value)}
+                                onChange={(e) => handleRateChange(e.target.value)}
                                 className="w-12 h-4 text-[10px] text-center border rounded bg-background focus:outline-none focus:ring-1 focus:ring-ring"
                                 title="Exchange Rate"
                             />
@@ -821,13 +866,7 @@ export function ListingsDataTable({
                                 variant="ghost"
                                 size="icon"
                                 className="h-6 w-6 rounded-full hover:bg-muted"
-                                onClick={() => {
-                                    setIsRmbToUsd(!isRmbToUsd)
-                                    const rate = parseFloat(convRate)
-                                    if (!isNaN(rate) && rate !== 0) {
-                                        setConvRate((1 / rate).toFixed(2))
-                                    }
-                                }}
+                                onClick={handleSwapCurrency}
                                 title="Swap Currencies"
                             >
                                 <ArrowLeftRight className="h-3 w-3" />
