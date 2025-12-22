@@ -1,7 +1,7 @@
 'use client'
 
 import { Sidebar } from '@/components/layout/sidebar'
-import { ListingsDataTable } from '@/components/listings/data-table'
+import { ListingsDataTable, ListingDraft } from '@/components/listings/data-table'
 import { RefreshCw } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast, { Toaster } from 'react-hot-toast'
@@ -114,6 +114,7 @@ export default function ListingsPage() {
         try {
             await createMutation.mutateAsync({
                 title: 'New Product',
+                status: 'draft',
                 price: 0,
             })
         } catch (e) {
@@ -150,101 +151,124 @@ export default function ListingsPage() {
         setDeleteVariantInfo(null)
     }
 
+    const handleDuplicateProduct = async (listing: ListingDraft) => {
+        const newDraftData = { ...listing.draft_data }
+
+        // Append (Copy) to title
+        if (newDraftData.title) {
+            newDraftData.title = `${newDraftData.title} (Copy)`
+        } else {
+            newDraftData.title = '(Copy)'
+        }
+
+        // Ensure standard fields are preserved
+        delete (newDraftData as any).id // Reset ID
+
+        // Variants handling: We need to reset IDs for variants as well
+        if (newDraftData.variants && Array.isArray(newDraftData.variants)) {
+            newDraftData.variants = newDraftData.variants.map((v: any) => {
+                const newV = { ...v }
+                delete newV.id
+                delete newV.product_id
+                return newV
+            })
+        }
+
+        try {
+            await createMutation.mutateAsync(newDraftData)
+        } catch (error) {
+            // Error handled by mutation
+        }
+    }
+
     return (
-        <div className="flex h-screen">
+        <div className="flex h-screen overflow-hidden">
             <Sidebar />
-            <div className="flex-1 flex flex-col overflow-hidden">
-                <main className="flex-1 overflow-auto">
-                    <div className="p-4">
-                        {/* Header */}
-                        <div className="mb-4 flex items-center justify-between">
-                            <div>
-                                <h1 className="text-2xl font-bold">Product Listings</h1>
-                                <p className="text-sm text-muted-foreground">
-                                    {listings.length > 0
-                                        ? `${listings.length} products`
-                                        : 'Create and manage product listings for Shopify'}
-                                </p>
-                            </div>
-                            {isGlobalLoading && (
-                                <div className="flex items-center gap-2 text-primary animate-in fade-in duration-300">
-                                    <RefreshCw className="h-5 w-5 animate-spin" />
-                                    <span className="text-sm font-medium">Syncing...</span>
-                                </div>
-                            )}
-                        </div>
-
-                        {/* Content */}
-                        {isLoading ? (
-                            <div className="flex items-center justify-center h-64">
-                                <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
-                            </div>
-                        ) : error ? (
-                            <div className="text-center text-destructive">
-                                Failed to load listings. Please try again.
-                            </div>
-                        ) : (
-                            <ListingsDataTable
-                                listings={listings}
-                                onAddProduct={handleAddProduct}
-                                onUpdateProduct={handleUpdateProduct}
-                                onDeleteProduct={handleDeleteProduct}
-                                onDeleteVariant={handleDeleteVariant}
-                                onSyncSuccess={() => queryClient.invalidateQueries({ queryKey: ['listings'] })}
-                                isLoading={createMutation.isPending || updateMutation.isPending || deleteMutation.isPending}
-                            />
-                        )}
-
-                        {/* Delete Confirmation Dialog */}
-                        <Dialog open={!!deleteId} onOpenChange={(open) => !open && setDeleteId(null)}>
-                            <DialogContent>
-                                <DialogHeader>
-                                    <DialogTitle>Delete Product</DialogTitle>
-                                    <DialogDescription>
-                                        Are you sure you want to delete this product? This action cannot be undone.
-                                    </DialogDescription>
-                                </DialogHeader>
-                                <DialogFooter>
-                                    <Button variant="outline" onClick={() => setDeleteId(null)}>Cancel</Button>
-                                    <Button
-                                        variant="destructive"
-                                        onClick={() => {
-                                            if (deleteId) {
-                                                deleteMutation.mutate(deleteId)
-                                                setDeleteId(null)
-                                            }
-                                        }}
-                                        disabled={deleteMutation.isPending}
-                                    >
-                                        Delete
-                                    </Button>
-                                </DialogFooter>
-                            </DialogContent>
-                        </Dialog>
-                        {/* Variant Delete Dialog */}
-                        <Dialog open={!!deleteVariantInfo} onOpenChange={(open) => !open && setDeleteVariantInfo(null)}>
-                            <DialogContent>
-                                <DialogHeader>
-                                    <DialogTitle>Delete Variant</DialogTitle>
-                                    <DialogDescription>
-                                        Are you sure you want to delete this variant?
-                                    </DialogDescription>
-                                </DialogHeader>
-                                <DialogFooter>
-                                    <Button variant="outline" onClick={() => setDeleteVariantInfo(null)}>Cancel</Button>
-                                    <Button
-                                        variant="destructive"
-                                        onClick={confirmDeleteVariant}
-                                        disabled={updateMutation.isPending}
-                                    >
-                                        Delete Variant
-                                    </Button>
-                                </DialogFooter>
-                            </DialogContent>
-                        </Dialog>
+            <main className="flex-1 overflow-y-auto p-8">
+                <div className="flex items-center justify-between mb-6">
+                    <h1 className="text-3xl font-bold">Listings</h1>
+                    <div className="flex items-center space-x-2">
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => queryClient.invalidateQueries({ queryKey: ['listings'] })}
+                            disabled={isFetching}
+                        >
+                            <RefreshCw className={`mr-2 h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
+                            Refresh
+                        </Button>
+                        <Button onClick={handleAddProduct} disabled={createMutation.isPending}>
+                            Add Product
+                        </Button>
                     </div>
-                </main>
-            </div>
+                </div>
+
+                {isLoading ? (
+                    <div>Loading listings...</div>
+                ) : error ? (
+                    <div>Error: {error.message}</div>
+                ) : (
+                    <ListingsDataTable
+                        listings={listings}
+                        onAddProduct={handleAddProduct}
+                        onUpdateProduct={handleUpdateProduct}
+                        onDeleteProduct={handleDeleteProduct}
+                        onDuplicateProduct={handleDuplicateProduct}
+                        onDeleteVariant={handleDeleteVariant}
+                        onSyncSuccess={() => queryClient.invalidateQueries({ queryKey: ['listings'] })}
+                        isLoading={isGlobalLoading}
+                    />
+                )}
+
+                {/* Delete Product Confirmation Dialog */}
+                <Dialog open={!!deleteId} onOpenChange={(open) => !open && setDeleteId(null)}>
+                    <DialogContent>
+                        <DialogHeader>
+                            <DialogTitle>Confirm Deletion</DialogTitle>
+                            <DialogDescription>
+                                Are you sure you want to delete this product? This action cannot be undone.
+                            </DialogDescription>
+                        </DialogHeader>
+                        <DialogFooter>
+                            <Button variant="outline" onClick={() => setDeleteId(null)}>Cancel</Button>
+                            <Button
+                                variant="destructive"
+                                onClick={() => {
+                                    if (deleteId) {
+                                        deleteMutation.mutate(deleteId)
+                                        setDeleteId(null)
+                                    }
+                                }}
+                                disabled={deleteMutation.isPending}
+                            >
+                                Delete
+                            </Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
+
+                {/* Delete Variant Confirmation Dialog */}
+                <Dialog open={!!deleteVariantInfo} onOpenChange={(open) => !open && setDeleteVariantInfo(null)}>
+                    <DialogContent>
+                        <DialogHeader>
+                            <DialogTitle>Delete Variant</DialogTitle>
+                            <DialogDescription>
+                                Are you sure you want to delete this variant?
+                            </DialogDescription>
+                        </DialogHeader>
+                        <DialogFooter>
+                            <Button variant="outline" onClick={() => setDeleteVariantInfo(null)}>Cancel</Button>
+                            <Button
+                                variant="destructive"
+                                onClick={confirmDeleteVariant}
+                                disabled={updateMutation.isPending}
+                            >
+                                Delete Variant
+                            </Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
+            </main>
             <Toaster position="bottom-right" />
         </div>
     )

@@ -76,6 +76,8 @@ export async function POST(request: NextRequest) {
             weight: body.weight || null,
             note: body.note || '',
             purchase_link: body.purchase_link || '',
+            variants: body.variants || [],
+            options: body.options || [],
         }
 
         const insertPayload = {

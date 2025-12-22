@@ -30,12 +30,12 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table'
-import { Plus, Trash2, Upload, GitBranch, Save, X, ChevronRight, ChevronDown, Layers, LayoutGrid, Folder, ArrowLeftRight } from 'lucide-react'
+import { Plus, Trash2, Upload, GitBranch, Save, X, ChevronRight, ChevronDown, Layers, LayoutGrid, Folder, ArrowLeftRight, Copy } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { VariantDialog } from './variant-dialog'
 
 // Listing draft interface
-interface ListingDraft {
+export interface ListingDraft {
     id: string
     product_id: string | null
     original_data?: any
@@ -92,6 +92,7 @@ interface ListingsDataTableProps {
     onUpdateProduct: (id: string, updates: any) => void
     onDeleteProduct: (id: string) => void
     onDeleteVariant?: (variantId: string, parentId: string) => void
+    onDuplicateProduct?: (listing: ListingDraft) => void
     onSyncSuccess?: () => void
     isLoading?: boolean
 }
@@ -171,6 +172,7 @@ export function ListingsDataTable({
     onUpdateProduct,
     onDeleteProduct,
     onDeleteVariant,
+    onDuplicateProduct,
     onSyncSuccess,
     isLoading = false,
 }: ListingsDataTableProps) {
@@ -571,7 +573,7 @@ export function ListingsDataTable({
         {
             accessorKey: 'is_pushed',
             header: 'If Pushed',
-            size: 80,
+            size: 60,
             enableResizing: false,
             cell: ({ row }) => (
                 <div className="flex justify-center">
@@ -586,7 +588,7 @@ export function ListingsDataTable({
         {
             accessorKey: 'title',
             header: 'Title',
-            size: 250,
+            size: 200,
             cell: ({ row }) => (
                 <div className="flex items-center gap-2">
                     {row.getCanExpand() && (
@@ -684,7 +686,7 @@ export function ListingsDataTable({
         {
             accessorKey: 'cost',
             header: 'Cost',
-            size: 100,
+            size: 80,
             cell: ({ row }) => (
                 <EditableCell
                     value={getValueWithPending(row.original, 'cost')}
@@ -696,7 +698,7 @@ export function ListingsDataTable({
         {
             accessorKey: 'sku',
             header: 'SKU',
-            size: 120,
+            size: 100,
             cell: ({ row }) => (
                 <EditableCell
                     value={getValueWithPending(row.original, 'sku')}
@@ -708,7 +710,7 @@ export function ListingsDataTable({
         {
             accessorKey: 'vendor',
             header: 'Vendor',
-            size: 120,
+            size: 100,
             cell: ({ row }) => (
                 row.original.is_variant || row.original.is_group ? ( // Disable vendor for variants AND groups (usually vendor is product-level)
                     <span className="text-muted-foreground">-</span>
@@ -724,7 +726,7 @@ export function ListingsDataTable({
         {
             accessorKey: 'weight',
             header: 'Weight (g)',
-            size: 100,
+            size: 80,
             cell: ({ row }) => (
                 <EditableCell
                     value={getValueWithPending(row.original, 'weight')}
@@ -736,7 +738,7 @@ export function ListingsDataTable({
         {
             accessorKey: 'note',
             header: 'Note',
-            size: 150,
+            size: 120,
             cell: ({ row }) => ( // Disable note for groups? Or allow it? Let's allow if useful, but maybe less critical.
                 row.original.is_group ? <span className="text-muted-foreground">-</span> :
                     <EditableCell
@@ -749,7 +751,7 @@ export function ListingsDataTable({
         {
             accessorKey: 'purchase_link',
             header: 'Purchase Link',
-            size: 150,
+            size: 120,
             cell: ({ row }) => (
                 row.original.is_group ? <span className="text-muted-foreground">-</span> :
                     <EditableCell
@@ -763,10 +765,10 @@ export function ListingsDataTable({
         {
             id: 'actions',
             header: 'Actions',
-            size: 120,
+            size: 100,
             enableResizing: false,
             cell: ({ row }) => (
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-0.5">
                     {row.original.is_group ? (
                         <span className="text-muted-foreground text-xs">Group</span>
                     ) : !row.original.is_variant ? (
@@ -776,15 +778,25 @@ export function ListingsDataTable({
                                 size="sm"
                                 onClick={() => handleCreateVariant(row.original.id)}
                                 title="Edit Options"
+                                className="h-6 w-6 p-0"
                             >
                                 <LayoutGrid className="h-4 w-4" />
                             </Button>
                             <Button
                                 variant="ghost"
                                 size="sm"
+                                onClick={() => onDuplicateProduct?.(row.original.original)}
+                                title="Duplicate"
+                                className="h-6 w-6 p-0"
+                            >
+                                <Copy className="h-4 w-4" />
+                            </Button>
+                            <Button
+                                variant="ghost"
+                                size="sm"
                                 onClick={() => onDeleteProduct(row.original.id)}
                                 title="Delete"
-                                className="text-destructive hover:text-destructive"
+                                className="text-destructive hover:text-destructive h-6 w-6 p-0"
                             >
                                 <Trash2 className="h-4 w-4" />
                             </Button>
@@ -793,26 +805,28 @@ export function ListingsDataTable({
                                 size="sm"
                                 onClick={() => handleSyncToShopify(row.original.id)}
                                 title="Sync to Shopify"
+                                className="h-6 w-6 p-0"
                             >
                                 <Upload className="h-4 w-4" />
                             </Button>
                         </>
                     ) : (
-                        // Variant Actions
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => onDeleteVariant && onDeleteVariant(row.original.id, row.original.parentId!)}
-                            title="Delete Variant"
-                            className="text-destructive hover:text-destructive"
-                        >
-                            <Trash2 className="h-4 w-4" />
-                        </Button>
+                        <div className="flex items-center gap-0.5">
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => onDeleteVariant?.(row.original.id, row.original.parentId || '')}
+                                title="Delete Variant"
+                                className="text-destructive hover:text-destructive h-6 w-6 p-0"
+                            >
+                                <X className="h-4 w-4" />
+                            </Button>
+                        </div>
                     )}
-                </div >
+                </div>
             ),
-        }
-    ], [getValueWithPending, handleCellChange, handleCreateVariant, onDeleteProduct, handleSyncToShopify])
+        },
+    ], [groupBy, getValueWithPending, handleCellChange, handleCreateVariant, onDeleteProduct, onDeleteVariant, onDuplicateProduct, handleSyncToShopify])
 
     const table = useReactTable({
         data,
