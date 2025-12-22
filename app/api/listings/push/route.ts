@@ -83,6 +83,37 @@ const LOCATIONS_QUERY = `
   }
 `
 
+// GraphQL query for fetching all publications (sales channels)
+const PUBLICATIONS_QUERY = `
+  query {
+    publications(first: 20) {
+      edges {
+        node {
+          id
+          name
+        }
+      }
+    }
+  }
+`
+
+// GraphQL mutation for publishing a product to a sales channel
+const PUBLISHABLE_PUBLISH_MUTATION = `
+  mutation publishablePublish($id: ID!, $input: [PublicationInput!]!) {
+    publishablePublish(id: $id, input: $input) {
+      publishable {
+        availablePublicationsCount {
+          count
+        }
+      }
+      userErrors {
+        field
+        message
+      }
+    }
+  }
+`
+
 // GraphQL mutation for activating inventory at a location
 const INVENTORY_ACTIVATE_MUTATION = `
   mutation inventoryBulkToggleActivation($inventoryItemIds: [ID!]!, $inventoryLocationId: ID!, $activation: Boolean!) {
@@ -182,7 +213,7 @@ export async function POST(request: Request) {
             descriptionHtml: draftData.description || '',
             vendor: draftData.vendor || '',
             productType: draftData.product_type || '',
-            status: 'DRAFT',
+            status: 'ACTIVE', // ACTIVE for sales channel visibility
             productOptions: [],
             variants: []
         }
@@ -424,7 +455,39 @@ export async function POST(request: Request) {
             }
         }
 
-        // 7. Update Database Record
+        // 7. Publish to Sales Channels
+        console.log('Fetching publications for sales channel publishing...')
+        try {
+            const pubData = await shopifyGraphQL(shop_domain, access_token, PUBLICATIONS_QUERY, {})
+            const publications = pubData.publications?.edges?.map((e: any) => e.node) || []
+            console.log('Available publications:', publications.map((p: any) => p.name))
+
+            if (publications.length > 0) {
+                const publicationInputs = publications.map((pub: any) => ({
+                    publicationId: pub.id
+                }))
+
+                console.log('Publishing product to all sales channels...')
+                const publishResult = await shopifyGraphQL(
+                    shop_domain,
+                    access_token,
+                    PUBLISHABLE_PUBLISH_MUTATION,
+                    {
+                        id: shopifyProduct.id,
+                        input: publicationInputs
+                    }
+                )
+                console.log('Publish result:', JSON.stringify(publishResult, null, 2))
+
+                if (publishResult.publishablePublish?.userErrors?.length > 0) {
+                    console.error('Publish errors:', publishResult.publishablePublish.userErrors)
+                }
+            }
+        } catch (pubError) {
+            console.error('Failed to publish to sales channels:', pubError)
+        }
+
+        // 8. Update Database Record
         const shopifyIdMatch = shopifyProduct.id.match(/\d+$/)
         const shopifyNumericId = shopifyIdMatch ? shopifyIdMatch[0] : shopifyProduct.id
 
