@@ -83,16 +83,13 @@ const LOCATIONS_QUERY = `
   }
 `
 
-// GraphQL mutation for setting inventory quantities
-const INVENTORY_SET_HAND_QUANTITIES_MUTATION = `
-  mutation inventorySetHandQuantities($input: InventorySetHandQuantitiesInput!) {
-    inventorySetHandQuantities(input: $input) {
-      inventoryAdjustmentGroup {
-        reason
-        changes {
-          delta
-          quantity
-        }
+// GraphQL mutation for activating inventory at a location
+const INVENTORY_ACTIVATE_MUTATION = `
+  mutation inventoryBulkToggleActivation($inventoryItemIds: [ID!]!, $inventoryLocationId: ID!, $activation: Boolean!) {
+    inventoryBulkToggleActivation(inventoryItemIds: $inventoryItemIds, inventoryLocationId: $inventoryLocationId, activation: $activation) {
+      inventoryValidationErrors {
+        message
+        code
       }
       userErrors {
         field
@@ -102,7 +99,28 @@ const INVENTORY_SET_HAND_QUANTITIES_MUTATION = `
   }
 `
 
+// GraphQL mutation for setting inventory quantities (modern API)
+const INVENTORY_SET_QUANTITIES_MUTATION = `
+  mutation inventorySetQuantities($input: InventorySetQuantitiesInput!) {
+    inventorySetQuantities(input: $input) {
+      inventoryAdjustmentGroup {
+        createdAt
+        reason
+      }
+      userErrors {
+        field
+        message
+        code
+      }
+    }
+  }
+`
+
 async function shopifyGraphQL(shopDomain: string, accessToken: string, query: string, variables: any) {
+    if (query.includes('SetInventoryQuantities') || query.includes('inventoryBulkToggleActivation')) {
+        console.log('DEBUG: Executing Inventory Mutation')
+        console.log('DEBUG: Variables:', JSON.stringify(variables, null, 2))
+    }
     const response = await fetch(`https://${shopDomain}/admin/api/2024-01/graphql.json`, {
         method: 'POST',
         headers: {
@@ -196,6 +214,7 @@ export async function POST(request: Request) {
                     price: v.price || 0,
                     inventoryItem: {
                         sku: v.sku || '',
+                        tracked: true, // Enable inventory tracking
                         measurement: {
                             weight: {
                                 value: v.weight || 0,
@@ -246,6 +265,7 @@ export async function POST(request: Request) {
                 price: draftData.price || 0,
                 inventoryItem: {
                     sku: draftData.sku || '',
+                    tracked: true, // Enable inventory tracking
                     measurement: {
                         weight: {
                             value: draftData.weight || 0,
@@ -339,6 +359,31 @@ export async function POST(request: Request) {
                 const locationId = locationsData.locations.edges[0]?.node?.id
 
                 if (locationId) {
+                    // 6a. Activate Inventory Items at Location First!
+                    const inventoryItemIdsToActivate = createdVariants
+                        .map((v: any) => v.inventoryItem?.id)
+                        .filter(Boolean)
+
+                    if (inventoryItemIdsToActivate.length > 0) {
+                        console.log('Activating inventory items at location:', locationId)
+                        try {
+                            const activateResult = await shopifyGraphQL(
+                                shop_domain,
+                                access_token,
+                                INVENTORY_ACTIVATE_MUTATION,
+                                {
+                                    inventoryItemIds: inventoryItemIdsToActivate,
+                                    inventoryLocationId: locationId,
+                                    activation: true
+                                }
+                            )
+                            console.log('Inventory activation result:', JSON.stringify(activateResult, null, 2))
+                        } catch (activateError) {
+                            console.error('Failed to activate inventory:', activateError)
+                        }
+                    }
+
+                    // 6b. Set Quantities
                     const quantitiesInput = variantStock.map(stockEntry => {
                         const variant = createdVariants[stockEntry.index]
                         if (variant?.inventoryItem?.id) {
@@ -353,17 +398,21 @@ export async function POST(request: Request) {
 
                     if (quantitiesInput.length > 0) {
                         console.log('Syncing inventory quantities:', quantitiesInput)
+                        // Build payload for new inventorySetQuantities API
+                        const setQuantitiesPayload = {
+                            input: {
+                                reason: 'correction',
+                                ignoreCompareQuantity: true,
+                                name: 'on_hand', // Specify we are setting on-hand quantity
+                                quantities: quantitiesInput
+                            }
+                        }
+                        console.log('DEBUG: inventorySetQuantities payload:', JSON.stringify(setQuantitiesPayload, null, 2))
                         const inventoryResult = await shopifyGraphQL(
                             shop_domain,
                             access_token,
-                            INVENTORY_SET_HAND_QUANTITIES_MUTATION,
-                            {
-                                input: {
-                                    reason: 'correction',
-                                    ignoreCompareQuantity: true,
-                                    quantities: quantitiesInput
-                                }
-                            }
+                            INVENTORY_SET_QUANTITIES_MUTATION,
+                            setQuantitiesPayload
                         )
                         console.log('Inventory sync result:', JSON.stringify(inventoryResult, null, 2))
                     }
