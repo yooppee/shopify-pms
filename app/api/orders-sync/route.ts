@@ -66,6 +66,7 @@ export async function POST(request: NextRequest) {
             subtotal_price: parseFloat(order.subtotal_price),
             total_tax: parseFloat(order.total_tax),
             total_discounts: parseFloat(order.total_discounts),
+            shipping_cost: parseFloat(order.total_shipping_price_set?.shop_money?.amount || '0'),
             currency: order.currency,
             customer_name: order.customer ? `${order.customer.first_name || ''} ${order.customer.last_name || ''}`.trim() : null,
             shipping_address: order.shipping_address || null, // JSONB
@@ -119,6 +120,7 @@ export async function POST(request: NextRequest) {
                     variant_id: item.variant_id,
                     product_id: item.product_id,
                     title: item.title,
+                    variant_title: item.variant_title,
                     sku: item.sku,
                     quantity: item.quantity,
                     price: parseFloat(item.price),

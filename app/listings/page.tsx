@@ -2,7 +2,6 @@
 
 import { Sidebar } from '@/components/layout/sidebar'
 import { ListingsDataTable, ListingDraft } from '@/components/listings/data-table'
-import { RefreshCw } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast, { Toaster } from 'react-hot-toast'
 
@@ -201,20 +200,7 @@ export default function ListingsPage() {
             <main className="flex-1 overflow-y-auto p-8">
                 <div className="flex items-center justify-between mb-6">
                     <h1 className="text-3xl font-bold">Listings</h1>
-                    <div className="flex items-center space-x-2">
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => queryClient.invalidateQueries({ queryKey: ['listings'] })}
-                            disabled={isFetching}
-                        >
-                            <RefreshCw className={`mr-2 h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
-                            Refresh
-                        </Button>
-                        <Button onClick={handleAddProduct} disabled={createMutation.isPending}>
-                            Add Product
-                        </Button>
-                    </div>
+
                 </div>
 
                 {isLoading ? (

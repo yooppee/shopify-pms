@@ -9,7 +9,8 @@ import {
     BarChart3,
     Settings,
     PanelLeftClose,
-    PanelLeftOpen
+    PanelLeftOpen,
+    CreditCard
 } from 'lucide-react'
 import { useSidebar } from '@/components/providers/sidebar-provider'
 
@@ -28,6 +29,11 @@ const navigation = [
         name: 'Analytics',
         href: '/analytics',
         icon: BarChart3,
+    },
+    {
+        name: 'Financial Expenses',
+        href: '/expenses',
+        icon: CreditCard,
     },
     {
         name: 'Settings',

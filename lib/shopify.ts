@@ -57,6 +57,7 @@ export interface ShopifyLineItem {
     quantity: number
     sku: string | null
     price: string
+    variant_title: string
     total_discount: string
 }
 
@@ -70,6 +71,12 @@ export interface ShopifyOrder {
     subtotal_price: string
     total_tax: string
     total_discounts: string
+    total_shipping_price_set: {
+        shop_money: {
+            amount: string
+            currency_code: string
+        }
+    }
     currency: string
     processed_at: string
     created_at: string
