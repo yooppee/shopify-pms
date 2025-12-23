@@ -2249,7 +2249,7 @@ export function InventoryDataTable({
                                         {row.getVisibleCells().map((cell) => (
                                             <td
                                                 key={cell.id}
-                                                className={`px-4 py-2 align-middle ${textOverflowMode === 'truncate'
+                                                className={`px-4 py-2 align-middle ${(textOverflowMode === 'truncate' || cell.column.id === 'purchase_link')
                                                     ? 'whitespace-nowrap overflow-hidden text-ellipsis max-w-0'
                                                     : 'break-all'
                                                     }`}
