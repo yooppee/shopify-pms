@@ -46,19 +46,32 @@ export function VariantDialog({ open, onOpenChange, initialOptions, onSave, exis
 
     // Load initial options when dialog opens
     useEffect(() => {
-        if (open && initialOptions && initialOptions.length > 0) {
-            const newOptions: Option[] = [
-                { id: 'opt1', name: '', values: [] },
-                { id: 'opt2', name: '', values: [] },
-                { id: 'opt3', name: '', values: [] },
-            ]
+        if (open) {
+            if (initialOptions && initialOptions.length > 0) {
+                const newOptions: Option[] = [
+                    { id: 'opt1', name: '', values: [] },
+                    { id: 'opt2', name: '', values: [] },
+                    { id: 'opt3', name: '', values: [] },
+                ]
 
-            initialOptions.forEach((opt, index) => {
-                if (index < 3) {
-                    newOptions[index] = { ...opt, id: `opt${index + 1}` }
-                }
+                initialOptions.forEach((opt, index) => {
+                    if (index < 3) {
+                        newOptions[index] = { ...opt, id: `opt${index + 1}` }
+                    }
+                })
+                setOptions(newOptions)
+            } else {
+                setOptions([
+                    { id: 'opt1', name: '', values: [] },
+                    { id: 'opt2', name: '', values: [] },
+                    { id: 'opt3', name: '', values: [] },
+                ])
+            }
+            setCurrentValues({
+                opt1: '',
+                opt2: '',
+                opt3: '',
             })
-            setOptions(newOptions)
         }
     }, [open, initialOptions])
 
