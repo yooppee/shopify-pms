@@ -106,7 +106,7 @@ export function InventoryDataTable({
     dateRange,
     onDateRangeChange,
 }: InventoryDataTableProps) {
-    const [sorting, setSorting] = useState<SortingState>([])
+    const [sorting, setSorting] = useState<SortingState>([{ id: 'created_at', desc: true }])
     const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
     const [globalFilter, setGlobalFilter] = useState('')
     const [expanded, setExpanded] = useState<ExpandedState>({})
@@ -1854,7 +1854,29 @@ export function InventoryDataTable({
 
         {
             id: 'created_at',
-            header: () => <span className="text-foreground">Created At*</span>,
+            accessorFn: (row) => {
+                const variant = row.is_spu ? row.subRows?.[0] : row
+                return variant?.created_at || ''
+            },
+            header: ({ column }) => (
+                <div className="flex items-center gap-1">
+                    <span className="text-foreground">Created At*</span>
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-4 w-4 p-0 hover:bg-muted"
+                        onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+                    >
+                        {column.getIsSorted() === "asc" ? (
+                            <ArrowUp className="h-3 w-3" />
+                        ) : column.getIsSorted() === "desc" ? (
+                            <ArrowDown className="h-3 w-3" />
+                        ) : (
+                            <ArrowUpDown className="h-3 w-3 opacity-50" />
+                        )}
+                    </Button>
+                </div>
+            ),
             size: 140,
             cell: ({ row }) => {
                 const variant = row.original.is_spu ? row.original.subRows?.[0] : row.original
