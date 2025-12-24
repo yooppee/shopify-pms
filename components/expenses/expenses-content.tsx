@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { cn } from '@/lib/utils'
+import toast from 'react-hot-toast'
 import { ProductCostTable } from './product-cost-table'
 import { ProcurementCostTable } from './procurement-cost-table'
 import { LogisticsCostTable } from './logistics-cost-table'
