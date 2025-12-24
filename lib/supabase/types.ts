@@ -79,8 +79,8 @@ export interface Database {
         Tables: {
             products: {
                 Row: Product
-                Insert: Omit<Product, 'id' | 'created_at' | 'updated_at'>
-                Update: Partial<Omit<Product, 'id' | 'created_at' | 'updated_at'>>
+                Insert: Omit<Product, 'id' | 'created_at' | 'updated_at'> & { created_at?: string }
+                Update: Partial<Omit<Product, 'id' | 'created_at' | 'updated_at'>> & { created_at?: string }
             }
             listing_drafts: {
                 Row: ListingDraft

@@ -652,8 +652,9 @@ export function InventoryDataTable({
                         const priceDiff = syncPrice !== dbPrice
                         const invDiff = syncInventory !== dbInventory
                         const compareDiff = syncCompareAt !== dbCompareAt
+                        const createdAtDiff = syncVariant && v.created_at !== syncVariant.created_at
 
-                        if (priceDiff || invDiff || compareDiff || titleDiff || imageDiff) {
+                        if (priceDiff || invDiff || compareDiff || titleDiff || imageDiff || createdAtDiff) {
                             console.log(`🔍 Diff detected for variant ${v.variant_id}:`, {
                                 title: v.title,
                                 price: {
@@ -684,6 +685,11 @@ export function InventoryDataTable({
                                     shopify: syncVariant.image_url,
                                     db: v.image_url,
                                     diff: imageDiff
+                                },
+                                created_at_change: {
+                                    shopify: syncVariant.created_at,
+                                    db: v.created_at,
+                                    diff: createdAtDiff
                                 }
                             })
                         }
@@ -694,7 +700,8 @@ export function InventoryDataTable({
                         syncInventory !== dbInventory ||
                         syncCompareAt !== dbCompareAt ||
                         titleDiff ||
-                        imageDiff
+                        imageDiff ||
+                        (syncVariant && v.created_at !== syncVariant.created_at)
                     )
                     if (isDiff) hasDiffs = true
 
@@ -1891,6 +1898,27 @@ export function InventoryDataTable({
                         hour: '2-digit',
                         minute: '2-digit'
                     })
+                }
+
+
+                const syncVariant = row.original.is_spu && row.original.subRows?.length
+                    ? row.original.subRows[0].sync_product
+                    : row.original.sync_product
+
+                // Check for created_at changes
+                const hasCreatedAtDiff = syncVariant && variant.created_at !== syncVariant.created_at
+
+                if (hasCreatedAtDiff && syncVariant) {
+                    return (
+                        <div className="flex flex-col">
+                            <span className="text-xs text-green-600 font-bold">
+                                {formatTimestamp(syncVariant.created_at)}
+                            </span>
+                            <span className="text-xs text-foreground line-through opacity-60">
+                                {formatTimestamp(variant.created_at)}
+                            </span>
+                        </div>
+                    )
                 }
 
                 return (

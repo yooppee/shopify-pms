@@ -102,6 +102,7 @@ export async function POST(request: NextRequest) {
                 landing_page_url: product.landing_page_url,
                 position: product.position,
                 internal_meta: internalMeta,
+                created_at: product.created_at,
             }
         })
 

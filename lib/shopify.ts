@@ -125,6 +125,7 @@ export interface TransformedProduct {
     image_url: string | null
     landing_page_url: string
     position: number
+    created_at: string
 }
 
 // ============================================
@@ -297,6 +298,7 @@ export function transformShopifyProducts(
                 image_url: variantImageUrl,
                 landing_page_url: landingPageUrl,
                 position: variant.position,
+                created_at: product.created_at,
             })
         }
     }
