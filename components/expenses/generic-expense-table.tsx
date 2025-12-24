@@ -65,17 +65,21 @@ export type ExpenseRecord = {
     children?: ExpenseRecord[]
     isGroup?: boolean
     parentId?: string | null
+    lastModified?: Date | null
+    lastModifiedColumn?: string
+    isNew?: boolean
 }
 
 interface GenericExpenseTableProps {
     data: ExpenseRecord[]
     onDataChange?: (data: ExpenseRecord[]) => void
     onSave?: () => void
+    onDiscard?: () => void
     isSaving?: boolean
     unsavedCount?: number
 }
 
-export function GenericExpenseTable({ data: initialData, onDataChange, onSave, isSaving, unsavedCount }: GenericExpenseTableProps) {
+export function GenericExpenseTable({ data: initialData, onDataChange, onSave, isSaving, unsavedCount, onDiscard }: GenericExpenseTableProps) {
     const [sorting, setSorting] = React.useState<SortingState>([])
     const [data, setData] = React.useState<ExpenseRecord[]>(initialData)
 
@@ -174,7 +178,33 @@ export function GenericExpenseTable({ data: initialData, onDataChange, onSave, i
         const updateRecursive = (nodes: ExpenseRecord[]): ExpenseRecord[] => {
             return nodes.map(node => {
                 if (node.id === id) {
-                    return { ...node, [columnId]: value }
+                    // Logic for new rows: do not track modification if it's new
+                    if (node.isNew) {
+                        return { ...node, [columnId]: value }
+                    }
+
+                    // Logic for multiple columns
+                    // Logic for multiple columns accumulation
+                    let newLastModifiedColumn = columnId
+                    if (node.lastModified) {
+                        const timeDiff = new Date().getTime() - new Date(node.lastModified).getTime()
+                        // If modified within last 1 minute
+                        if (timeDiff < 60000 && node.lastModifiedColumn) {
+                            const existingColumns = node.lastModifiedColumn.split(',')
+                            if (!existingColumns.includes(columnId)) {
+                                newLastModifiedColumn = [...existingColumns, columnId].join(',')
+                            } else {
+                                newLastModifiedColumn = node.lastModifiedColumn
+                            }
+                        }
+                    }
+
+                    return {
+                        ...node,
+                        [columnId]: value,
+                        lastModified: new Date(),
+                        lastModifiedColumn: newLastModifiedColumn
+                    }
                 }
                 if (node.children) {
                     return { ...node, children: updateRecursive(node.children) }
@@ -380,7 +410,7 @@ export function GenericExpenseTable({ data: initialData, onDataChange, onSave, i
 
                 const date = row.getValue("date") as Date
                 return (
-                    <div className="flex items-center pl-8"> {/* Indent slightly to align with group toggles if needed, or just standard */}
+                    <div className="flex flex-col items-start justify-center pl-8"> {/* Stack vertically */}
                         <Popover>
                             <PopoverTrigger asChild>
                                 <Button
@@ -408,6 +438,20 @@ export function GenericExpenseTable({ data: initialData, onDataChange, onSave, i
                                 />
                             </PopoverContent>
                         </Popover>
+                        {row.original.lastModified && (
+                            <div className="text-[10px] text-muted-foreground mt-1 pl-3">
+                                Updated {format(new Date(row.original.lastModified), "MM/dd HH:mm")}
+                                {row.original.lastModifiedColumn && ` (${row.original.lastModifiedColumn.split(',').map(col =>
+                                    col === 'amountRMB' ? 'RMB' :
+                                        col === 'amountUSD' ? 'USD' :
+                                            col === 'item' ? 'Item' :
+                                                col === 'person' ? 'Person' :
+                                                    col === 'date' ? 'Date' :
+                                                        col
+                                ).join(', ')
+                                    })`}
+                            </div>
+                        )}
                     </div>
                 )
             },
@@ -513,7 +557,9 @@ export function GenericExpenseTable({ data: initialData, onDataChange, onSave, i
             item: "",
             amountRMB: 0,
             amountUSD: 0,
+            amountUSD: 0,
             person: "",
+            isNew: true,
         }
         setData((old) => {
             const newData = [...old, newRecord]
@@ -760,25 +806,37 @@ export function GenericExpenseTable({ data: initialData, onDataChange, onSave, i
                     </Button>
 
                     {onSave && (
-                        <Button
-                            onClick={onSave}
-                            disabled={isSaving || !unsavedCount}
-                            variant="default"
-                            size="sm"
-                            className={cn(
-                                "h-8 text-white transition-all",
-                                unsavedCount
-                                    ? "bg-black hover:bg-gray-800"
-                                    : "bg-gray-200 text-gray-400 cursor-not-allowed hover:bg-gray-200"
-                            )}
-                        >
-                            {isSaving ? (
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            ) : (
-                                <Save className="mr-2 h-4 w-4" />
-                            )}
-                            Save Changes {unsavedCount ? `(${unsavedCount})` : ''}
-                        </Button>
+                        <div className="relative">
+                            {onDiscard && unsavedCount ? (
+                                <Button
+                                    onClick={onDiscard}
+                                    variant="ghost"
+                                    size="sm"
+                                    className="absolute -top-8 right-0 h-6 text-xs text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                                >
+                                    Discard Changes
+                                </Button>
+                            ) : null}
+                            <Button
+                                onClick={onSave}
+                                disabled={isSaving || !unsavedCount}
+                                variant="default"
+                                size="sm"
+                                className={cn(
+                                    "h-8 text-white transition-all",
+                                    unsavedCount
+                                        ? "bg-black hover:bg-gray-800"
+                                        : "bg-gray-200 text-gray-400 cursor-not-allowed hover:bg-gray-200"
+                                )}
+                            >
+                                {isSaving ? (
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                ) : (
+                                    <Save className="mr-2 h-4 w-4" />
+                                )}
+                                Save Changes {unsavedCount ? `(${unsavedCount})` : ''}
+                            </Button>
+                        </div>
                     )}
                 </div>
             </div>

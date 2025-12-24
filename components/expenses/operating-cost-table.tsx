@@ -9,9 +9,10 @@ interface OperatingCostTableProps {
     onSave: () => void
     isSaving: boolean
     unsavedCount: number
+    onDiscard: () => void
 }
 
-export function OperatingCostTable({ data, onDataChange, onSave, isSaving, unsavedCount }: OperatingCostTableProps) {
+export function OperatingCostTable({ data, onDataChange, onSave, isSaving, unsavedCount, onDiscard }: OperatingCostTableProps) {
     return (
         <div className="space-y-4">
             <div className="flex items-center justify-between">
@@ -23,6 +24,7 @@ export function OperatingCostTable({ data, onDataChange, onSave, isSaving, unsav
                 onSave={onSave}
                 isSaving={isSaving}
                 unsavedCount={unsavedCount}
+                onDiscard={onDiscard}
             />
         </div>
     )

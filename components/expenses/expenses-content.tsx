@@ -251,9 +251,10 @@ export function ExpensesContent() {
                         <ProcurementCostTable
                             data={procurementData}
                             onDataChange={setProcurementData}
-                            onSave={handleSave}
+                            onSave={() => handleSave('procurement', procurementData, originalProcurementData)}
                             isSaving={isSaving}
                             unsavedCount={procurementChanges}
+                            onDiscard={() => setProcurementData(structuredClone(originalProcurementData))}
                         />
                     )}
 
@@ -261,9 +262,10 @@ export function ExpensesContent() {
                         <LogisticsCostTable
                             data={logisticsData}
                             onDataChange={setLogisticsData}
-                            onSave={handleSave}
+                            onSave={() => handleSave('logistics', logisticsData, originalLogisticsData)}
                             isSaving={isSaving}
                             unsavedCount={logisticsChanges}
+                            onDiscard={() => setLogisticsData(structuredClone(originalLogisticsData))}
                         />
                     )}
 
@@ -271,9 +273,10 @@ export function ExpensesContent() {
                         <OperatingCostTable
                             data={operatingData}
                             onDataChange={setOperatingData}
-                            onSave={handleSave}
+                            onSave={() => handleSave('operating', operatingData, originalOperatingData)}
                             isSaving={isSaving}
                             unsavedCount={operatingChanges}
+                            onDiscard={() => setOperatingData(structuredClone(originalOperatingData))}
                         />
                     )}
                 </div>
