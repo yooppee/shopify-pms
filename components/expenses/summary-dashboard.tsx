@@ -15,12 +15,26 @@ interface SummaryDashboardProps {
 }
 
 export function SummaryDashboard({ procurementData, logisticsData, operatingData }: SummaryDashboardProps) {
+    // Helper to flatten
+    const flatten = (records: ExpenseRecord[]): ExpenseRecord[] => {
+        let flat: ExpenseRecord[] = []
+        for (const r of records) {
+            if (r.children && r.children.length > 0) {
+                flat = flat.concat(flatten(r.children))
+            } else if (!r.isGroup) {
+                // Only add leaf nodes (actual expenses)
+                flat.push(r)
+            }
+        }
+        return flat
+    }
+
     // Collect all available months from data
     const availableMonths = useMemo(() => {
         const allDates = [
-            ...procurementData,
-            ...logisticsData,
-            ...operatingData
+            ...flatten(procurementData),
+            ...flatten(logisticsData),
+            ...flatten(operatingData)
         ]
             .filter(r => r.date) // Ensure date exists
             .map(r => {
@@ -41,7 +55,7 @@ export function SummaryDashboard({ procurementData, logisticsData, operatingData
     const [startMonth, setStartMonth] = useState<string>(availableMonths[availableMonths.length - 1] || format(new Date(), 'yyyy-MM'))
     const [endMonth, setEndMonth] = useState<string>(availableMonths[0] || format(new Date(), 'yyyy-MM'))
 
-    // Filter data by selected range
+
     const filteredData = useMemo(() => {
         if (!startMonth || !endMonth) return { procurement: [], logistics: [], operating: [] }
 
@@ -58,9 +72,9 @@ export function SummaryDashboard({ procurementData, logisticsData, operatingData
         }
 
         return {
-            procurement: procurementData.filter(filterFn),
-            logistics: logisticsData.filter(filterFn),
-            operating: operatingData.filter(filterFn)
+            procurement: flatten(procurementData).filter(filterFn),
+            logistics: flatten(logisticsData).filter(filterFn),
+            operating: flatten(operatingData).filter(filterFn)
         }
     }, [startMonth, endMonth, procurementData, logisticsData, operatingData])
 

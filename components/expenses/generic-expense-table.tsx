@@ -9,8 +9,10 @@ import {
 
     SortingState,
     getSortedRowModel,
+    ExpandedState,
+    getExpandedRowModel,
 } from "@tanstack/react-table"
-import { Trash2, Plus, Search as SearchIcon, Calendar as CalendarIcon, Save, Loader2, Filter, RotateCcw } from "lucide-react"
+import { Trash2, Plus, Search as SearchIcon, Calendar as CalendarIcon, Save, Loader2, Filter, RotateCcw, Layers, ChevronRight, ChevronDown, FolderOpen, Folder, Minimize2 } from "lucide-react"
 import { format, subDays, isWithinInterval } from "date-fns"
 import { DateRange } from "react-day-picker"
 
@@ -41,6 +43,18 @@ import {
     TableRow,
 } from "@/components/ui/table"
 
+const flattenExpenses = (nodes: ExpenseRecord[]): ExpenseRecord[] => {
+    let flat: ExpenseRecord[] = []
+    for (const node of nodes) {
+        if (node.isGroup && node.children) {
+            flat = flat.concat(flattenExpenses(node.children))
+        } else {
+            flat.push(node)
+        }
+    }
+    return flat
+}
+
 export type ExpenseRecord = {
     id: string
     date: Date
@@ -48,6 +62,9 @@ export type ExpenseRecord = {
     amountRMB: number
     amountUSD: number
     person: string
+    children?: ExpenseRecord[]
+    isGroup?: boolean
+    parentId?: string | null
 }
 
 interface GenericExpenseTableProps {
@@ -82,6 +99,12 @@ export function GenericExpenseTable({ data: initialData, onDataChange, onSave, i
     const [isDeleteMode, setIsDeleteMode] = React.useState(false)
     const [pendingDeletions, setPendingDeletions] = React.useState<Set<string>>(new Set())
 
+
+
+    const [isGroupMode, setIsGroupMode] = React.useState(false)
+    const [selectedForGroup, setSelectedForGroup] = React.useState<Set<string>>(new Set())
+    const [expanded, setExpanded] = React.useState<ExpandedState>({})
+
     const [searchTerm, setSearchTerm] = React.useState('')
     const [statsColumn, setStatsColumn] = React.useState<string>('amountRMB')
     const [statsType, setStatsType] = React.useState<'sum' | 'avg'>('sum')
@@ -95,36 +118,46 @@ export function GenericExpenseTable({ data: initialData, onDataChange, onSave, i
     }, [statsDateRange])
 
     const filteredData = React.useMemo(() => {
-        let result = data
-
-        // 1. Search Filter
-        if (searchTerm) {
-            const lowerTerm = searchTerm.toLowerCase()
-            result = result.filter(record =>
-                record.item.toLowerCase().includes(lowerTerm)
-            )
+        const lowerTerm = searchTerm.toLowerCase()
+        const checkDate = (date?: Date) => {
+            if (!statsDateRange?.from || !date) return true
+            const d = new Date(date)
+            if (statsDateRange.to) {
+                const endDate = new Date(statsDateRange.to)
+                endDate.setHours(23, 59, 59, 999)
+                return isWithinInterval(d, { start: statsDateRange.from, end: endDate })
+            }
+            return d >= statsDateRange.from
         }
 
-        // 2. Date Filter
-        if (statsDateRange?.from) {
-            result = result.filter(record => {
-                if (!record.date) return false
-                const date = new Date(record.date)
-                if (statsDateRange.to) {
-                    const endDate = new Date(statsDateRange.to)
-                    endDate.setHours(23, 59, 59, 999)
-                    return isWithinInterval(date, { start: statsDateRange.from!, end: endDate })
-                }
-                return date >= statsDateRange.from!
-            })
+        const filterNode = (node: ExpenseRecord): ExpenseRecord | null => {
+            // Leaf node check
+            if (!node.isGroup) {
+                const matchesSearch = !searchTerm || node.item.toLowerCase().includes(lowerTerm)
+                const matchesDate = !statsDateRange?.from || checkDate(node.date)
+                return (matchesSearch && matchesDate) ? node : null
+            }
+
+            // Group node: check children
+            let filteredChildren: ExpenseRecord[] = []
+            if (node.children) {
+                filteredChildren = node.children.map(filterNode).filter(Boolean) as ExpenseRecord[]
+            }
+
+            if (filteredChildren.length > 0) {
+                return { ...node, children: filteredChildren }
+            }
+            return null
         }
-        return result
+
+        return data.map(filterNode).filter(Boolean) as ExpenseRecord[]
     }, [data, searchTerm, statsDateRange])
 
     const statsValue = React.useMemo(() => {
-        if (filteredData.length === 0) return 0
+        const flatData = flattenExpenses(filteredData)
+        if (flatData.length === 0) return 0
 
-        const total = filteredData.reduce((sum, record) => {
+        const total = flatData.reduce((sum, record) => {
             let val = 0
             switch (statsColumn) {
                 case 'amountRMB': val = record.amountRMB; break;
@@ -134,20 +167,24 @@ export function GenericExpenseTable({ data: initialData, onDataChange, onSave, i
             return sum + (isNaN(val) ? 0 : val)
         }, 0)
 
-        return statsType === 'avg' ? (total / filteredData.length) : total
+        return statsType === 'avg' ? (total / flatData.length) : total
     }, [filteredData, statsColumn, statsType])
 
-    const updateData = (rowIndex: number, columnId: string, value: any) => {
-        setData((old) => {
-            const newData = old.map((row, index) => {
-                if (index === rowIndex) {
-                    return {
-                        ...old[rowIndex]!,
-                        [columnId]: value,
-                    }
+    const updateData = (id: string, columnId: string, value: any) => {
+        const updateRecursive = (nodes: ExpenseRecord[]): ExpenseRecord[] => {
+            return nodes.map(node => {
+                if (node.id === id) {
+                    return { ...node, [columnId]: value }
                 }
-                return row
+                if (node.children) {
+                    return { ...node, children: updateRecursive(node.children) }
+                }
+                return node
             })
+        }
+
+        setData((old) => {
+            const newData = updateRecursive(old)
             updateParent(newData)
             return newData
         })
@@ -187,6 +224,70 @@ export function GenericExpenseTable({ data: initialData, onDataChange, onSave, i
         setIsDeleteMode(false)
     }
 
+    const handleGroupToggle = (id: string) => {
+        setSelectedForGroup((prev) => {
+            const next = new Set(prev)
+            if (next.has(id)) {
+                next.delete(id)
+            } else {
+                next.add(id)
+            }
+            return next
+        })
+    }
+
+    const handleConfirmGroup = () => {
+        if (selectedForGroup.size === 0) return
+
+        const parentId = crypto.randomUUID()
+        const children = data.filter(row => selectedForGroup.has(row.id))
+        const remaining = data.filter(row => !selectedForGroup.has(row.id))
+
+        // Create parent record
+        const firstChild = children[0]
+        const parentRecord: ExpenseRecord = {
+            id: parentId,
+            date: firstChild?.date || new Date(),
+            item: "New Group",
+            amountRMB: 0,
+            amountUSD: 0,
+            person: "",
+            isGroup: true,
+            children: children.map(c => ({ ...c, parentId }))
+        }
+
+        const newData = [parentRecord, ...remaining]
+
+        setData(newData)
+        updateParent(newData)
+        setSelectedForGroup(new Set())
+        setIsGroupMode(false)
+        // Auto-expand the new group
+        setExpanded(prev => ({ ...prev, [parentId]: true }))
+    }
+
+    const handleUngroup = (group: ExpenseRecord) => {
+        if (!group.children) return
+
+        const children = group.children.map(c => ({ ...c, parentId: null }))
+        const newData = data.filter(r => r.id !== group.id).concat(children)
+
+        setData(newData)
+        updateParent(newData)
+    }
+
+    const handleGroupSelectAllToggle = () => {
+        const eligibleRows = data.filter(row => !row.isGroup && !row.parentId)
+        const allSelected = eligibleRows.length > 0 && eligibleRows.every(row => selectedForGroup.has(row.id))
+
+        if (allSelected) {
+            setSelectedForGroup(new Set())
+        } else {
+            const allIds = new Set(eligibleRows.map(r => r.id))
+            setSelectedForGroup(allIds)
+        }
+    }
+
     const columns: ColumnDef<ExpenseRecord>[] = React.useMemo(() => [
         ...(isDeleteMode ? [{
             id: 'delete',
@@ -219,13 +320,67 @@ export function GenericExpenseTable({ data: initialData, onDataChange, onSave, i
             ),
             size: 40,
         } as ColumnDef<ExpenseRecord>] : []),
+        ...(isGroupMode ? [{
+            id: 'group-select',
+            header: () => {
+                // Determine if all ELIGIBLE rows are selected
+                const eligibleRows = data.filter(row => !row.isGroup && !row.parentId)
+                const allSelected = eligibleRows.length > 0 && eligibleRows.every(row => selectedForGroup.has(row.id))
+
+                return (
+                    <div className="flex items-center justify-center">
+                        <Checkbox
+                            checked={allSelected}
+                            onCheckedChange={handleGroupSelectAllToggle}
+                            aria-label="Select all for grouping"
+                        />
+                    </div>
+                )
+            },
+            cell: ({ row }) => {
+                // Only allow selecting top-level non-group items for now? 
+                // Or allow nesting groups? Let's keep it simple: only top-level items can be grouped (for now).
+                // Actually if row.depth > 0 it's a child.
+                if (row.depth > 0 || row.original.isGroup) return null
+
+                return (
+                    <div className="flex items-center justify-center">
+                        <Checkbox
+                            checked={selectedForGroup.has(row.original.id)}
+                            onCheckedChange={() => handleGroupToggle(row.original.id)}
+                        />
+                    </div>
+                )
+            },
+            size: 40,
+        } as ColumnDef<ExpenseRecord>] : []),
         {
             accessorKey: "date",
             header: "日期",
             cell: ({ row }) => {
+                // If group row, allow expanding?
+                if (row.original.isGroup) {
+                    return (
+                        <div className="flex items-center gap-2">
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 w-6 p-0"
+                                onClick={row.getToggleExpandedHandler()}
+                            >
+                                {row.getIsExpanded() ? (
+                                    <ChevronDown className="h-4 w-4" />
+                                ) : (
+                                    <ChevronRight className="h-4 w-4" />
+                                )}
+                            </Button>
+                        </div>
+                    )
+                }
+
                 const date = row.getValue("date") as Date
                 return (
-                    <div className="flex items-center">
+                    <div className="flex items-center pl-8"> {/* Indent slightly to align with group toggles if needed, or just standard */}
                         <Popover>
                             <PopoverTrigger asChild>
                                 <Button
@@ -245,7 +400,7 @@ export function GenericExpenseTable({ data: initialData, onDataChange, onSave, i
                                     selected={date}
                                     onSelect={(newDate) => {
                                         if (newDate) {
-                                            updateData(row.index, "date", newDate)
+                                            updateData(row.original.id, "date", newDate)
                                         }
                                     }}
                                     disabled={(date) => date > new Date()}
@@ -260,27 +415,47 @@ export function GenericExpenseTable({ data: initialData, onDataChange, onSave, i
         {
             accessorKey: "item",
             header: "支出项目",
-            cell: ({ row, column }) => {
-                const value = row.getValue("item")
+            cell: ({ row }) => {
+                // Indentation logic
+                const paddingLeft = `${row.depth * 2}rem`
+
+                if (row.original.isGroup) {
+                    return (
+                        <div style={{ paddingLeft }} className="flex items-center gap-2">
+                            <Folder className="h-4 w-4 text-blue-500" />
+                            <EditableCell
+                                value={row.getValue("item")}
+                                onCommit={(value) => updateData(row.original.id, "item", value)}
+                                className="font-bold"
+                            />
+                        </div>
+                    )
+                }
+
                 return (
-                    <EditableCell
-                        value={value}
-                        onCommit={(newValue) => updateData(row.index, column.id, newValue)}
-                    />
+                    <div style={{ paddingLeft }}>
+                        <EditableCell
+                            value={row.getValue("item")}
+                            onCommit={(value) => updateData(row.original.id, "item", value)}
+                        />
+                    </div>
                 )
             },
         },
         {
             accessorKey: "amountRMB",
             header: "支出金额(RMB)",
-            cell: ({ row, column }) => {
-                const value = row.getValue("amountRMB")
+            cell: ({ row }) => {
+                if (row.original.isGroup) {
+                    const total = flattenExpenses(row.original.children || []).reduce((sum, r) => sum + (r.amountRMB || 0), 0)
+                    return <span className="font-semibold text-muted-foreground">¥{formatNumber(total)}</span>
+                }
                 return (
                     <EditableCell
-                        value={value}
+                        value={row.getValue("amountRMB")}
+                        onCommit={(value) => updateData(row.original.id, "amountRMB", Number(value))}
                         format="currency"
                         prefix="¥"
-                        onCommit={(newValue) => updateData(row.index, column.id, newValue)}
                     />
                 )
             },
@@ -288,14 +463,17 @@ export function GenericExpenseTable({ data: initialData, onDataChange, onSave, i
         {
             accessorKey: "amountUSD",
             header: "支出金额(USD)",
-            cell: ({ row, column }) => {
-                const value = row.getValue("amountUSD")
+            cell: ({ row }) => {
+                if (row.original.isGroup) {
+                    const total = flattenExpenses(row.original.children || []).reduce((sum, r) => sum + (r.amountUSD || 0), 0)
+                    return <span className="font-semibold text-muted-foreground">${formatNumber(total)}</span>
+                }
                 return (
                     <EditableCell
-                        value={value}
+                        value={row.getValue("amountUSD")}
+                        onCommit={(value) => updateData(row.original.id, "amountUSD", Number(value))}
                         format="currency"
                         prefix="$"
-                        onCommit={(newValue) => updateData(row.index, column.id, newValue)}
                     />
                 )
             },
@@ -303,17 +481,30 @@ export function GenericExpenseTable({ data: initialData, onDataChange, onSave, i
         {
             accessorKey: "person",
             header: "负责人",
-            cell: ({ row, column }) => {
-                const value = row.getValue("person")
+            cell: ({ row }) => {
+                if (row.original.isGroup) return (
+                    <div className="flex items-end justify-end w-full">
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleUngroup(row.original)}
+                            className="h-6 px-2 text-xs text-red-500 hover:text-red-700 hover:bg-red-50"
+                            title="Ungroup"
+                        >
+                            <Minimize2 className="h-3 w-3 mr-1" />
+                            Ungroup
+                        </Button>
+                    </div>
+                )
                 return (
                     <EditableCell
-                        value={value}
-                        onCommit={(newValue) => updateData(row.index, column.id, newValue)}
+                        value={row.getValue("person")}
+                        onCommit={(value) => updateData(row.original.id, "person", value)}
                     />
                 )
             },
         },
-    ], [isDeleteMode, pendingDeletions, data])
+    ] as ColumnDef<ExpenseRecord>[], [data, isDeleteMode, pendingDeletions, isGroupMode, selectedForGroup])
 
     const addRow = () => {
         const newRecord: ExpenseRecord = {
@@ -335,30 +526,35 @@ export function GenericExpenseTable({ data: initialData, onDataChange, onSave, i
         data: filteredData,
         columns,
         getCoreRowModel: getCoreRowModel(),
-
-        onSortingChange: setSorting,
         getSortedRowModel: getSortedRowModel(),
+        getExpandedRowModel: getExpandedRowModel(),
+        onSortingChange: setSorting,
+        onExpandedChange: setExpanded,
+        getSubRows: (row) => row.children,
         state: {
             sorting,
+            expanded,
         },
     })
 
     return (
         <div className="space-y-4">
-            <div className="flex flex-col gap-4 md:grid md:grid-cols-3 md:items-center">
+            <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                    <SearchIcon className="h-4 w-4 text-muted-foreground" />
-                    <Input
-                        placeholder="Search by expense item..."
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        className="max-w-sm"
-                    />
+                    <div className="relative">
+                        <SearchIcon className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                        <Input
+                            placeholder="Search by expense item..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            className="pl-8 w-[250px]"
+                        />
+                    </div>
                 </div>
 
-                {/* Statistics Dashboard */}
-                <div className="flex justify-center">
-                    <div className="flex items-center gap-2 bg-muted/30 p-2 rounded-lg border w-fit">
+                <div className="flex items-center gap-4">
+                    {/* Stats Dashboard */}
+                    <div className="flex items-center gap-2 bg-muted/30 p-1.5 rounded-lg border">
                         <div className="flex items-center gap-2">
                             <span className="text-xs font-medium text-muted-foreground whitespace-nowrap">Stats:</span>
 
@@ -487,40 +683,75 @@ export function GenericExpenseTable({ data: initialData, onDataChange, onSave, i
                 </div>
 
                 <div className="flex justify-end gap-2">
-                    {isDeleteMode ? (
+                    {isGroupMode ? (
                         <>
                             <Button
-                                onClick={handleConfirmDelete}
                                 variant="destructive"
                                 size="sm"
-                                className="h-8"
-                                disabled={pendingDeletions.size === 0}
-                            >
-                                <Trash2 className="mr-2 h-4 w-4" />
-                                Confirm Delete ({pendingDeletions.size})
-                            </Button>
-                            <Button
-                                onClick={() => {
-                                    setIsDeleteMode(false)
-                                    setPendingDeletions(new Set())
-                                }}
-                                variant="ghost"
-                                size="sm"
-                                className="h-8"
+                                onClick={() => setIsGroupMode(false)}
+                                className="gap-2 h-8"
                             >
                                 Cancel
                             </Button>
+                            <Button
+                                variant="default" // Primary color
+                                size="sm"
+                                onClick={handleConfirmGroup}
+                                disabled={selectedForGroup.size === 0}
+                                className="gap-2 h-8"
+                            >
+                                <Layers className="h-4 w-4" />
+                                Confirm Group
+                            </Button>
                         </>
                     ) : (
-                        <Button
-                            onClick={() => setIsDeleteMode(true)}
-                            variant="outline"
-                            size="sm"
-                            className="h-8 border-dashed text-destructive hover:text-destructive hover:bg-destructive/10 border-destructive/20"
-                        >
-                            <Trash2 className="mr-2 h-4 w-4" />
-                            Delete Rows
-                        </Button>
+                        isDeleteMode ? (
+                            <>
+                                <Button
+                                    onClick={handleConfirmDelete}
+                                    variant="destructive"
+                                    size="sm"
+                                    className="h-8"
+                                    disabled={pendingDeletions.size === 0}
+                                >
+                                    <Trash2 className="mr-2 h-4 w-4" />
+                                    Confirm Delete ({pendingDeletions.size})
+                                </Button>
+                                <Button
+                                    onClick={() => {
+                                        setIsDeleteMode(false)
+                                        setPendingDeletions(new Set())
+                                    }}
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-8"
+                                >
+                                    Cancel
+                                </Button>
+                            </>
+                        ) : (
+                            <>
+                                <Button
+                                    onClick={() => setIsDeleteMode(true)}
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-8 border-dashed text-destructive hover:text-destructive hover:bg-destructive/10 border-destructive/20"
+                                >
+                                    <Trash2 className="mr-2 h-4 w-4" />
+                                    Delete Rows
+                                </Button>
+
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="gap-2 h-8 border-dashed"
+                                    onClick={() => setIsGroupMode(true)}
+                                >
+                                    <Layers className="h-4 w-4" />
+                                    Group Rows
+                                </Button>
+                            </>
+                        )
                     )}
 
                     <Button onClick={addRow} variant="outline" size="sm" className="h-8 border-dashed">

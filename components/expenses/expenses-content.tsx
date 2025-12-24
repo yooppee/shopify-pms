@@ -28,16 +28,31 @@ export function ExpensesContent() {
     const [isLoading, setIsLoading] = useState(true)
     const [isSaving, setIsSaving] = useState(false)
 
+    // Helper to flatten hierarchy for comparison
+    const flattenForDiff = (records: ExpenseRecord[]): ExpenseRecord[] => {
+        let flat: ExpenseRecord[] = []
+        for (const r of records) {
+            flat.push(r)
+            if (r.children && r.children.length > 0) {
+                flat = flat.concat(flattenForDiff(r.children))
+            }
+        }
+        return flat
+    }
+
     // Helper to calculate diff count
     const getUnsavedCount = (current: ExpenseRecord[], original: ExpenseRecord[]) => {
         if (current === original) return 0
 
+        const flatCurrent = flattenForDiff(current)
+        const flatOriginal = flattenForDiff(original)
+
         let count = 0
-        const originalMap = new Map(original.map(r => [r.id, r]))
-        const currentMap = new Map(current.map(r => [r.id, r]))
+        const originalMap = new Map(flatOriginal.map(r => [r.id, r]))
+        const currentMap = new Map(flatCurrent.map(r => [r.id, r]))
 
         // Check for additions and modifications
-        for (const r of current) {
+        for (const r of flatCurrent) {
             const orig = originalMap.get(r.id)
             if (!orig) {
                 count++ // Added
@@ -48,7 +63,9 @@ export function ExpensesContent() {
                     r.amountRMB !== orig.amountRMB ||
                     r.amountUSD !== orig.amountUSD ||
                     r.person !== orig.person ||
-                    r.date.getTime() !== orig.date.getTime()
+                    r.date.getTime() !== orig.date.getTime() ||
+                    r.parentId !== orig.parentId || // Check parent changes
+                    r.isGroup !== orig.isGroup
                 ) {
                     count++ // Modified
                 }
@@ -56,7 +73,7 @@ export function ExpensesContent() {
         }
 
         // Check for deletions
-        for (const r of original) {
+        for (const r of flatOriginal) {
             if (!currentMap.has(r.id)) {
                 count++ // Deleted
             }
@@ -93,24 +110,27 @@ export function ExpensesContent() {
                         ...r,
                         date: r.date ? new Date(r.date) : new Date()
                     }))
-                    setProcurementData(data)
-                    setOriginalProcurementData(data)
+                    const hierarchicalData = buildHierarchy(data)
+                    setProcurementData(hierarchicalData)
+                    setOriginalProcurementData(hierarchicalData)
                 }
                 if (logisticsJson.success) {
                     const data = logisticsJson.data.map((r: any) => ({
                         ...r,
                         date: r.date ? new Date(r.date) : new Date()
                     }))
-                    setLogisticsData(data)
-                    setOriginalLogisticsData(data)
+                    const hierarchicalData = buildHierarchy(data)
+                    setLogisticsData(hierarchicalData)
+                    setOriginalLogisticsData(hierarchicalData)
                 }
                 if (operatingJson.success) {
                     const data = operatingJson.data.map((r: any) => ({
                         ...r,
                         date: r.date ? new Date(r.date) : new Date()
                     }))
-                    setOperatingData(data)
-                    setOriginalOperatingData(data)
+                    const hierarchicalData = buildHierarchy(data)
+                    setOperatingData(hierarchicalData)
+                    setOriginalOperatingData(hierarchicalData)
                 }
 
             } catch (error) {
@@ -121,6 +141,24 @@ export function ExpensesContent() {
         }
         fetchData()
     }, [])
+
+    const buildHierarchy = (flatData: any[]) => {
+        const dataMap: Record<string, any> = {}
+        // First pass: create nodes
+        flatData.forEach(item => {
+            dataMap[item.id] = { ...item, children: [] }
+        })
+        const roots: any[] = []
+        // Second pass: link parent/child
+        flatData.forEach(item => {
+            if (item.parentId && dataMap[item.parentId]) {
+                dataMap[item.parentId].children.push(dataMap[item.id])
+            } else {
+                roots.push(dataMap[item.id])
+            }
+        })
+        return roots
+    }
 
     const handleSave = async () => {
         setIsSaving(true)

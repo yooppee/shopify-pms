@@ -53,6 +53,8 @@ export async function GET(request: NextRequest) {
             amountRMB: Number(row.amount_rmb),
             amountUSD: Number(row.amount_usd),
             person: row.person,
+            parentId: row.parent_id,
+            isGroup: row.is_group,
             // type is internal
         })) || []
 
@@ -80,16 +82,30 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'Missing type or expenses' }, { status: 400 })
         }
 
-        // Prepare payload
-        const payload = expenses.map((r: ExpenseRecord) => ({
-            id: r.id, // Ensure frontend UUIDs are preserved
-            date: r.date,
-            item: r.item,
-            amount_rmb: r.amountRMB,
-            amount_usd: r.amountUSD,
-            person: r.person,
-            type: type
-        }))
+        // Helper to flatten hierarchy
+        const flattenExpenses = (records: ExpenseRecord[], parentId: string | null = null): any[] => {
+            let flat: any[] = []
+            for (const r of records) {
+                flat.push({
+                    id: r.id,
+                    date: r.date,
+                    item: r.item,
+                    amount_rmb: r.amountRMB,
+                    amount_usd: r.amountUSD,
+                    person: r.person,
+                    type: type,
+                    parent_id: parentId,
+                    is_group: r.isGroup || false
+                })
+                if (r.children && r.children.length > 0) {
+                    flat = flat.concat(flattenExpenses(r.children, r.id))
+                }
+            }
+            return flat
+        }
+
+        // Prepare payload by flattening
+        const payload = flattenExpenses(expenses)
 
         // Strategy: 
         // 1. Delete all for this type that are NOT in the new list (handle deletions)
