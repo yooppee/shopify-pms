@@ -293,7 +293,7 @@ export function GenericExpenseTable({ data: initialData, onDataChange, onSave, i
         setSelectedForGroup(new Set())
         setIsGroupMode(false)
         // Auto-expand the new group
-        setExpanded(prev => ({ ...prev, [parentId]: true }))
+        setExpanded((prev) => ({ ...(prev as Record<string, boolean>), [parentId]: true }))
     }
 
     const handleUngroup = (group: ExpenseRecord) => {
@@ -557,7 +557,7 @@ export function GenericExpenseTable({ data: initialData, onDataChange, onSave, i
             item: "",
             amountRMB: 0,
             amountUSD: 0,
-            amountUSD: 0,
+
             person: "",
             isNew: true,
         }
