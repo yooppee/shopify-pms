@@ -6,11 +6,11 @@ import {
     flexRender,
     getCoreRowModel,
     useReactTable,
-    getPaginationRowModel,
+
     SortingState,
     getSortedRowModel,
 } from "@tanstack/react-table"
-import { CalendarIcon, Plus, Trash2, Search as SearchIcon, Filter, RotateCcw } from "lucide-react"
+import { Trash2, Plus, Search as SearchIcon, Calendar as CalendarIcon, Save, Loader2, Filter, RotateCcw } from "lucide-react"
 import { format, subDays, isWithinInterval } from "date-fns"
 import { DateRange } from "react-day-picker"
 
@@ -53,9 +53,12 @@ export type ExpenseRecord = {
 interface GenericExpenseTableProps {
     data: ExpenseRecord[]
     onDataChange?: (data: ExpenseRecord[]) => void
+    onSave?: () => void
+    isSaving?: boolean
+    unsavedCount?: number
 }
 
-export function GenericExpenseTable({ data: initialData, onDataChange }: GenericExpenseTableProps) {
+export function GenericExpenseTable({ data: initialData, onDataChange, onSave, isSaving, unsavedCount }: GenericExpenseTableProps) {
     const [sorting, setSorting] = React.useState<SortingState>([])
     const [data, setData] = React.useState<ExpenseRecord[]>(initialData)
 
@@ -108,7 +111,9 @@ export function GenericExpenseTable({ data: initialData, onDataChange }: Generic
                 if (!record.date) return false
                 const date = new Date(record.date)
                 if (statsDateRange.to) {
-                    return isWithinInterval(date, { start: statsDateRange.from!, end: statsDateRange.to })
+                    const endDate = new Date(statsDateRange.to)
+                    endDate.setHours(23, 59, 59, 999)
+                    return isWithinInterval(date, { start: statsDateRange.from!, end: endDate })
                 }
                 return date >= statsDateRange.from!
             })
@@ -243,6 +248,7 @@ export function GenericExpenseTable({ data: initialData, onDataChange }: Generic
                                             updateData(row.index, "date", newDate)
                                         }
                                     }}
+                                    disabled={(date) => date > new Date()}
                                     initialFocus
                                 />
                             </PopoverContent>
@@ -329,7 +335,7 @@ export function GenericExpenseTable({ data: initialData, onDataChange }: Generic
         data: filteredData,
         columns,
         getCoreRowModel: getCoreRowModel(),
-        getPaginationRowModel: getPaginationRowModel(),
+
         onSortingChange: setSorting,
         getSortedRowModel: getSortedRowModel(),
         state: {
@@ -521,6 +527,28 @@ export function GenericExpenseTable({ data: initialData, onDataChange }: Generic
                         <Plus className="mr-2 h-4 w-4" />
                         添加一行
                     </Button>
+
+                    {onSave && (
+                        <Button
+                            onClick={onSave}
+                            disabled={isSaving || !unsavedCount}
+                            variant="default"
+                            size="sm"
+                            className={cn(
+                                "h-8 text-white transition-all",
+                                unsavedCount
+                                    ? "bg-black hover:bg-gray-800"
+                                    : "bg-gray-200 text-gray-400 cursor-not-allowed hover:bg-gray-200"
+                            )}
+                        >
+                            {isSaving ? (
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            ) : (
+                                <Save className="mr-2 h-4 w-4" />
+                            )}
+                            Save Changes {unsavedCount ? `(${unsavedCount})` : ''}
+                        </Button>
+                    )}
                 </div>
             </div>
             <div className="rounded-md border bg-white">

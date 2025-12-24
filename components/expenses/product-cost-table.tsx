@@ -1,6 +1,7 @@
 'use client'
 
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
+import toast, { Toaster } from 'react-hot-toast'
 import {
     Table,
     TableBody,
@@ -11,7 +12,7 @@ import {
 } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { formatCurrency } from '@/lib/utils'
-import { ChevronDown, ChevronRight, AlertCircle, Loader2, Package, Pencil, Check, X, Search, Calendar as CalendarIcon, Filter, RotateCcw } from 'lucide-react'
+import { ChevronDown, ChevronRight, AlertCircle, Loader2, Package, Pencil, Check, X, Search, Calendar as CalendarIcon, Filter, RotateCcw, ShoppingBag } from 'lucide-react'
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { format, subDays, isWithinInterval } from 'date-fns'
 import { Button } from '@/components/ui/button'
@@ -56,6 +57,15 @@ interface Order {
     fulfillment_status: string
     order_line_items: OrderLineItem[]
     total_cost: number
+}
+
+async function syncOrders() {
+    const response = await fetch('/api/orders-sync', { method: 'POST' })
+    if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.error || 'Failed to sync orders')
+    }
+    return response.json()
 }
 
 // Column definitions with default widths
@@ -140,6 +150,38 @@ export function ProductCostTable() {
     const [editingCost, setEditingCost] = useState<{ id: string; value: string } | null>(null)
     const [savingCost, setSavingCost] = useState<string | null>(null)
     const [searchTerm, setSearchTerm] = useState('')
+    const [lastOrderSyncTime, setLastOrderSyncTime] = useState<string | null>(null)
+
+    // Load last order sync time from localStorage
+    useEffect(() => {
+        const saved = localStorage.getItem('lastOrderSyncTime')
+        if (saved) {
+            setLastOrderSyncTime(saved)
+        }
+    }, [])
+
+    const syncOrderMutation = useMutation({
+        mutationFn: syncOrders,
+        onSuccess: async (data: any) => {
+            console.log('✅ Order sync successful:', data)
+            if (data.synced_at) {
+                setLastOrderSyncTime(data.synced_at)
+                localStorage.setItem('lastOrderSyncTime', data.synced_at)
+            }
+            toast.success(data.message || 'Orders synced successfully!', {
+                duration: 4000,
+                icon: '✅',
+            })
+            await queryClient.invalidateQueries({ queryKey: ['orders'] })
+        },
+        onError: (error) => {
+            console.error('❌ Order sync failed:', error)
+            toast.error(error.message || 'Failed to sync orders. Please try again.', {
+                duration: 5000,
+                icon: '❌',
+            })
+        },
+    })
 
     // Statistics state
     const [statsColumn, setStatsColumn] = useState<string>('total_cost')
@@ -175,7 +217,9 @@ export function ProductCostTable() {
                 if (!order.created_at) return false
                 const date = new Date(order.created_at)
                 if (statsDateRange.to) {
-                    return isWithinInterval(date, { start: statsDateRange.from!, end: statsDateRange.to })
+                    const endDate = new Date(statsDateRange.to)
+                    endDate.setHours(23, 59, 59, 999)
+                    return isWithinInterval(date, { start: statsDateRange.from!, end: endDate })
                 }
                 return date >= statsDateRange.from!
             })
@@ -210,7 +254,9 @@ export function ProductCostTable() {
                 if (!order.created_at) return false
                 const date = new Date(order.created_at)
                 if (statsDateRange.to) {
-                    return isWithinInterval(date, { start: statsDateRange.from!, end: statsDateRange.to })
+                    const endDate = new Date(statsDateRange.to)
+                    endDate.setHours(23, 59, 59, 999)
+                    return isWithinInterval(date, { start: statsDateRange.from!, end: endDate })
                 }
                 // If only from date, check if same day or after? standard is range usually requires both or is "from X"
                 // isWithinInterval requires both. If only 'from', treat as "on or after"? 
@@ -511,7 +557,24 @@ export function ProductCostTable() {
                 </div>
 
                 {/* Empty third column for grid alignment */}
-                <div></div>
+                {/* Sync Orders Button */}
+                <div className="flex flex-col items-end justify-center">
+                    <Button
+                        onClick={() => syncOrderMutation.mutate()}
+                        disabled={syncOrderMutation.isPending}
+                        variant="outline"
+                        size="sm"
+                        className="h-8"
+                    >
+                        <ShoppingBag className={`mr-2 h-4 w-4 ${syncOrderMutation.isPending ? 'animate-spin' : ''}`} />
+                        {syncOrderMutation.isPending ? 'Syncing...' : 'Sync Orders'}
+                    </Button>
+                    {lastOrderSyncTime && !syncOrderMutation.isPending && (
+                        <span className="text-[10px] text-muted-foreground mt-1">
+                            Last: {new Date(lastOrderSyncTime).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} {new Date(lastOrderSyncTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                    )}
+                </div>
             </div>
 
             <div className="border rounded-md bg-white">

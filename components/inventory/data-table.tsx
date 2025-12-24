@@ -92,6 +92,19 @@ interface InventoryDataTableProps {
     onDateRangeChange?: (range: DateRange | undefined) => void
 }
 
+// Helper for consistent date formatting and comparison
+const formatTimestamp = (isoString: string | null | undefined) => {
+    if (!isoString) return ''
+    const date = new Date(isoString)
+    return date.toLocaleString('zh-CN', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit'
+    })
+}
+
 export function InventoryDataTable({
     products,
     pendingSyncData,
@@ -652,7 +665,7 @@ export function InventoryDataTable({
                         const priceDiff = syncPrice !== dbPrice
                         const invDiff = syncInventory !== dbInventory
                         const compareDiff = syncCompareAt !== dbCompareAt
-                        const createdAtDiff = syncVariant && v.created_at !== syncVariant.created_at
+                        const createdAtDiff = syncVariant && formatTimestamp(v.created_at) !== formatTimestamp(syncVariant.created_at)
 
                         if (priceDiff || invDiff || compareDiff || titleDiff || imageDiff || createdAtDiff) {
                             console.log(`🔍 Diff detected for variant ${v.variant_id}:`, {
@@ -701,7 +714,7 @@ export function InventoryDataTable({
                         syncCompareAt !== dbCompareAt ||
                         titleDiff ||
                         imageDiff ||
-                        (syncVariant && v.created_at !== syncVariant.created_at)
+                        (syncVariant && formatTimestamp(v.created_at) !== formatTimestamp(syncVariant.created_at))
                     )
                     if (isDiff) hasDiffs = true
 
@@ -1889,16 +1902,7 @@ export function InventoryDataTable({
                 const variant = row.original.is_spu ? row.original.subRows?.[0] : row.original
                 if (!variant || !variant.created_at) return <span className="text-foreground">-</span>
 
-                const formatTimestamp = (isoString: string) => {
-                    const date = new Date(isoString)
-                    return date.toLocaleString('zh-CN', {
-                        year: 'numeric',
-                        month: '2-digit',
-                        day: '2-digit',
-                        hour: '2-digit',
-                        minute: '2-digit'
-                    })
-                }
+
 
 
                 const syncVariant = row.original.is_spu && row.original.subRows?.length
@@ -1906,7 +1910,7 @@ export function InventoryDataTable({
                     : row.original.sync_product
 
                 // Check for created_at changes
-                const hasCreatedAtDiff = syncVariant && variant.created_at !== syncVariant.created_at
+                const hasCreatedAtDiff = syncVariant && formatTimestamp(variant.created_at) !== formatTimestamp(syncVariant.created_at)
 
                 if (hasCreatedAtDiff && syncVariant) {
                     return (

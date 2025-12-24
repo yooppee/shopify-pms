@@ -38,20 +38,20 @@ export function SummaryDashboard({ procurementData, logisticsData, operatingData
         return sorted.length > 0 ? sorted : [format(new Date(), 'yyyy-MM')]
     }, [procurementData, logisticsData, operatingData])
 
-    const [selectedMonth, setSelectedMonth] = useState<string>(availableMonths[0] || format(new Date(), 'yyyy-MM'))
+    const [startMonth, setStartMonth] = useState<string>(availableMonths[availableMonths.length - 1] || format(new Date(), 'yyyy-MM'))
+    const [endMonth, setEndMonth] = useState<string>(availableMonths[0] || format(new Date(), 'yyyy-MM'))
 
-    // Filter data by selected month
+    // Filter data by selected range
     const filteredData = useMemo(() => {
-        if (!selectedMonth) return { procurement: [], logistics: [], operating: [] }
-
-        const targetDate = new Date(selectedMonth + '-01')
+        if (!startMonth || !endMonth) return { procurement: [], logistics: [], operating: [] }
 
         const filterFn = (r: ExpenseRecord) => {
             if (!r.date) return false
             try {
                 const d = new Date(r.date)
                 if (isNaN(d.getTime())) return false
-                return isSameMonth(d, targetDate)
+                const monthStr = format(d, 'yyyy-MM')
+                return monthStr >= startMonth && monthStr <= endMonth
             } catch {
                 return false
             }
@@ -62,7 +62,7 @@ export function SummaryDashboard({ procurementData, logisticsData, operatingData
             logistics: logisticsData.filter(filterFn),
             operating: operatingData.filter(filterFn)
         }
-    }, [selectedMonth, procurementData, logisticsData, operatingData])
+    }, [startMonth, endMonth, procurementData, logisticsData, operatingData])
 
     // Calculate Totals
     const totals = useMemo(() => {
@@ -101,22 +101,41 @@ export function SummaryDashboard({ procurementData, logisticsData, operatingData
 
     return (
         <div className="space-y-6">
-            <div className="flex items-center gap-4">
-                <span className="text-sm font-medium">Select Month:</span>
-                <Select value={selectedMonth} onValueChange={setSelectedMonth}>
-                    <SelectTrigger className="w-[180px]">
-                        <SelectValue placeholder="Select month" />
-                    </SelectTrigger>
-                    <SelectContent>
-                        {availableMonths.length > 0 ? (
-                            availableMonths.map(m => (
-                                <SelectItem key={m} value={m}>{m}</SelectItem>
-                            ))
-                        ) : (
-                            <SelectItem value={format(new Date(), 'yyyy-MM')}>{format(new Date(), 'yyyy-MM')}</SelectItem>
-                        )}
-                    </SelectContent>
-                </Select>
+            <div className="flex items-center gap-6">
+                <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium">From:</span>
+                    <Select value={startMonth} onValueChange={setStartMonth}>
+                        <SelectTrigger className="w-[140px]">
+                            <SelectValue placeholder="Start month" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {availableMonths.length > 0 ? (
+                                availableMonths.map(m => (
+                                    <SelectItem key={m} value={m}>{m}</SelectItem>
+                                ))
+                            ) : (
+                                <SelectItem value={format(new Date(), 'yyyy-MM')}>{format(new Date(), 'yyyy-MM')}</SelectItem>
+                            )}
+                        </SelectContent>
+                    </Select>
+                </div>
+                <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium">To:</span>
+                    <Select value={endMonth} onValueChange={setEndMonth}>
+                        <SelectTrigger className="w-[140px]">
+                            <SelectValue placeholder="End month" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {availableMonths.length > 0 ? (
+                                availableMonths.map(m => (
+                                    <SelectItem key={m} value={m}>{m}</SelectItem>
+                                ))
+                            ) : (
+                                <SelectItem value={format(new Date(), 'yyyy-MM')}>{format(new Date(), 'yyyy-MM')}</SelectItem>
+                            )}
+                        </SelectContent>
+                    </Select>
+                </div>
             </div>
 
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -141,7 +160,7 @@ export function SummaryDashboard({ procurementData, logisticsData, operatingData
             </div>
 
             <div className="space-y-4">
-                <h3 className="text-lg font-medium">Spending by Person (Selected Month)</h3>
+                <h3 className="text-lg font-medium">Spending by Person ({startMonth} to {endMonth})</h3>
                 <div className="rounded-md border bg-white">
                     <Table>
                         <TableHeader>

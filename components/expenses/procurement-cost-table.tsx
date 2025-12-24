@@ -6,16 +6,25 @@ import { GenericExpenseTable, ExpenseRecord } from "./generic-expense-table"
 interface ProcurementCostTableProps {
     data: ExpenseRecord[]
     onDataChange: (data: ExpenseRecord[]) => void
+    onSave: () => void
+    isSaving: boolean
+    unsavedCount: number
 }
 
-export function ProcurementCostTable({ data, onDataChange }: ProcurementCostTableProps) {
+export function ProcurementCostTable({ data, onDataChange, onSave, isSaving, unsavedCount }: ProcurementCostTableProps) {
     return (
         <div className="space-y-4">
             <div className="flex items-center justify-between">
                 <h2 className="text-xl font-semibold tracking-tight">采购费用</h2>
                 {/* Add buttons here later if needed */}
             </div>
-            <GenericExpenseTable data={data} onDataChange={onDataChange} />
+            <GenericExpenseTable
+                data={data}
+                onDataChange={onDataChange}
+                onSave={onSave}
+                isSaving={isSaving}
+                unsavedCount={unsavedCount}
+            />
         </div>
     )
 }
