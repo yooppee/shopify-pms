@@ -160,39 +160,24 @@ export function ExpensesContent() {
         return roots
     }
 
-    const handleSave = async () => {
+    const handleSave = async (type: 'procurement' | 'logistics' | 'operating', currentData: ExpenseRecord[], originalData: ExpenseRecord[]) => {
         setIsSaving(true)
         try {
-            // Only save if dirty? Or just save all for simplicity?
-            // Saving all ensures consistency, but we can reset original data for all on success.
-            await Promise.all([
-                fetch('/api/expenses', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ type: 'procurement', expenses: procurementData })
-                }),
-                fetch('/api/expenses', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ type: 'logistics', expenses: logisticsData })
-                }),
-                fetch('/api/expenses', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ type: 'operating', expenses: operatingData })
-                })
-            ])
+            await fetch('/api/expenses', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ type, expenses: currentData })
+            })
 
             // Update originals to match current state
-            setOriginalProcurementData(procurementData)
-            setOriginalLogisticsData(logisticsData)
-            setOriginalOperatingData(operatingData)
+            if (type === 'procurement') setOriginalProcurementData(currentData)
+            if (type === 'logistics') setOriginalLogisticsData(currentData)
+            if (type === 'operating') setOriginalOperatingData(currentData)
 
-            // Alert is annoying if frequent, maybe toast? For now native alert is fine as requested implicitly.
-            // alert("All changes saved successfully!") 
+            toast.success("Changes saved successfully")
         } catch (error) {
             console.error("Failed to save changes:", error)
-            alert("Failed to save changes. Please try again.")
+            toast.error("Failed to save changes")
         } finally {
             setIsSaving(false)
         }
