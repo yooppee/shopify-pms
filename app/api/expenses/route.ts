@@ -55,8 +55,7 @@ export async function GET(request: NextRequest) {
             person: row.person,
             parentId: row.parent_id,
             isGroup: row.is_group,
-            parentId: row.parent_id,
-            isGroup: row.is_group,
+
             lastModified: row.last_modified ? new Date(row.last_modified) : null,
             lastModifiedColumn: row.last_modified_column,
             // type is internal
@@ -99,7 +98,7 @@ export async function POST(request: NextRequest) {
                     person: r.person,
                     type: type,
                     parent_id: parentId,
-                    parent_id: parentId,
+
                     is_group: r.isGroup || false,
                     last_modified: r.lastModified,
                     last_modified_column: r.lastModifiedColumn
