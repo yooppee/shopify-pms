@@ -1,13 +1,24 @@
-'use client'
+"use client"
 
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
 import { ProductCostTable } from './product-cost-table'
+import { ProcurementCostTable } from './procurement-cost-table'
+import { LogisticsCostTable } from './logistics-cost-table'
+import { OperatingCostTable } from './operating-cost-table'
+import { SummaryDashboard } from './summary-dashboard'
+import { procurementData as initialProcurementData, logisticsData as initialLogisticsData, operatingData as initialOperatingData } from '@/app/api/expenses/mock-data'
+import { ExpenseRecord } from './generic-expense-table'
 
 type Tab = 'summary' | 'product_cost' | 'procurement' | 'logistics' | 'operational'
 
 export function ExpensesContent() {
     const [activeTab, setActiveTab] = useState<Tab>('product_cost')
+
+    // Lifted State
+    const [procurementData, setProcurementData] = useState<ExpenseRecord[]>(initialProcurementData)
+    const [logisticsData, setLogisticsData] = useState<ExpenseRecord[]>(initialLogisticsData)
+    const [operatingData, setOperatingData] = useState<ExpenseRecord[]>(initialOperatingData)
 
     const tabs: { id: Tab; label: string }[] = [
         { id: 'summary', label: '汇总' },
@@ -42,11 +53,11 @@ export function ExpensesContent() {
 
             <div className="mt-6">
                 {activeTab === 'summary' && (
-                    <div className="p-4 border rounded-lg bg-card text-card-foreground shadow-sm">
-                        <div className="text-muted-foreground text-center py-8">
-                            Summary dashboard is coming soon.
-                        </div>
-                    </div>
+                    <SummaryDashboard
+                        procurementData={procurementData}
+                        logisticsData={logisticsData}
+                        operatingData={operatingData}
+                    />
                 )}
 
                 {activeTab === 'product_cost' && (
@@ -54,27 +65,15 @@ export function ExpensesContent() {
                 )}
 
                 {activeTab === 'procurement' && (
-                    <div className="p-4 border rounded-lg bg-card text-card-foreground shadow-sm">
-                        <div className="text-muted-foreground text-center py-8">
-                            Procurement expenses tracking is coming soon.
-                        </div>
-                    </div>
+                    <ProcurementCostTable data={procurementData} onDataChange={setProcurementData} />
                 )}
 
                 {activeTab === 'logistics' && (
-                    <div className="p-4 border rounded-lg bg-card text-card-foreground shadow-sm">
-                        <div className="text-muted-foreground text-center py-8">
-                            Logistics expenses tracking is coming soon.
-                        </div>
-                    </div>
+                    <LogisticsCostTable data={logisticsData} onDataChange={setLogisticsData} />
                 )}
 
                 {activeTab === 'operational' && (
-                    <div className="p-4 border rounded-lg bg-card text-card-foreground shadow-sm">
-                        <div className="text-muted-foreground text-center py-8">
-                            Operational expenses tracking is coming soon.
-                        </div>
-                    </div>
+                    <OperatingCostTable data={operatingData} onDataChange={setOperatingData} />
                 )}
             </div>
         </div>
