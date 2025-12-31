@@ -1,423 +1,148 @@
 'use client'
 
 import { Sidebar } from '@/components/layout/sidebar'
-import { InventoryDataTable } from '@/components/inventory/data-table'
+import { InventoryTable } from '@/components/inventory/inventory-table'
+import { TrackingDialog } from '@/components/inventory/tracking-dialog'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { Plus, RefreshCw, Layers, LayoutGrid } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
-import { RefreshCw, Scale, FileSpreadsheet, ShoppingBag } from 'lucide-react'
-import { ImportDialog } from '@/components/inventory/import-dialog'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useState, useEffect } from 'react'
-import toast, { Toaster } from 'react-hot-toast'
+import React, { useState, useMemo } from 'react'
+import { ProductWithCalculations } from '@/lib/supabase/types'
 
-import { DateRange } from 'react-day-picker'
-
-async function fetchProducts(dateRange?: DateRange) {
-    let url = '/api/products'
-    if (dateRange?.from && dateRange?.to) {
-        const endDate = new Date(dateRange.to)
-        endDate.setHours(23, 59, 59, 999)
-
-        const params = new URLSearchParams({
-            start_date: dateRange.from.toISOString(),
-            end_date: endDate.toISOString()
-        })
-        url += `?${params.toString()}`
-    }
-    const response = await fetch(url)
+async function fetchProducts() {
+    const response = await fetch('/api/products')
     if (!response.ok) throw new Error('Failed to fetch products')
     const data = await response.json()
     return data.products || []
 }
 
-async function fetchShopifyData() {
-    const response = await fetch('/api/sync')  // Fetch live Shopify data
-    if (!response.ok) throw new Error('Failed to fetch Shopify data')
-    const data = await response.json()
-    return data.products || []
-}
-
-async function syncProducts() {
-    const response = await fetch('/api/sync', { method: 'POST' })
-    if (!response.ok) throw new Error('Failed to sync products')
-    return response.json()
-}
-
-async function fetchWeightData(mode: 'empty' | 'all' = 'all') {
-    const response = await fetch(`/api/weight-sync?mode=${mode}`)
-    if (!response.ok) throw new Error('Failed to fetch weight data')
-    const data = await response.json()
-    return data.products || []
-}
-
-async function updateWeights(mode: 'empty' | 'all' = 'all') {
-    const response = await fetch(`/api/weight-sync?mode=${mode}`, { method: 'POST' })
-    if (!response.ok) throw new Error('Failed to update weights')
-    return response.json()
-}
-
-async function syncOrders() {
-    const response = await fetch('/api/orders-sync', { method: 'POST' })
-    if (!response.ok) {
-        const data = await response.json()
-        throw new Error(data.error || 'Failed to sync orders')
-    }
-    return response.json()
-}
-
-import { subDays } from 'date-fns'
-
-// ...
-
 export default function InventoryPage() {
     const queryClient = useQueryClient()
-    const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined)
+    const [isTrackingOpen, setIsTrackingOpen] = useState(false)
 
-    // Set default date range on mount to avoid hydration mismatch
-    useEffect(() => {
-        setDateRange({
-            from: subDays(new Date(), 30),
-            to: new Date(),
-        })
-    }, [])
-
-    const [pendingSyncData, setPendingSyncData] = useState<any[] | undefined>(undefined)
-    const [pendingWeightData, setPendingWeightData] = useState<any[] | undefined>(undefined)
-    const [lastOrderSyncTime, setLastOrderSyncTime] = useState<string | null>(null)
-
-    // Load last order sync time from localStorage
-    useEffect(() => {
-        const saved = localStorage.getItem('lastOrderSyncTime')
-        if (saved) {
-            setLastOrderSyncTime(saved)
-        }
-    }, [])
-    const [isLoadingPreview, setIsLoadingPreview] = useState(false)
-    const [isLoadingWeight, setIsLoadingWeight] = useState(false)
-    const [showModeDialog, setShowModeDialog] = useState(false)
-    const [currentWeightMode, setCurrentWeightMode] = useState<'empty' | 'all'>('all')
-    const [importDialogOpen, setImportDialogOpen] = useState(false)
-
-    const { data: products = [], isLoading, error } = useQuery({
-        queryKey: ['products', dateRange],
-        queryFn: () => fetchProducts(dateRange),
+    const { data: allProducts = [], isLoading, error, refetch } = useQuery({
+        queryKey: ['products'],
+        queryFn: fetchProducts,
     })
 
+    // 过滤出被追踪的产品 (SPU 维度)
+    const trackedProducts = useMemo(() => {
+        return allProducts.filter((p: ProductWithCalculations) => p.internal_meta?.is_tracked_inventory)
+    }, [allProducts])
 
-    const syncMutation = useMutation({
-        mutationFn: syncProducts,
-        onSuccess: async (data) => {
-            console.log('✅ Sync POST successful, response:', data)
+    // 为选择框提取所有可选 SPU (去重)
+    const availableSPUs = useMemo(() => {
+        const spuMap = new Map<number, { shopify_product_id: number, title: string, image_url: string | null, handle: string, is_tracked: boolean }>()
 
-            // Clear sync preview state
-            setPendingSyncData(undefined)
+        allProducts.forEach((p: ProductWithCalculations) => {
+            const spuId = p.shopify_product_id
+            const isCustom = !!p.internal_meta?.custom_variant
 
-            // Invalidate and refetch products query to update UI without page reload
-            console.log('🔄 Invalidating products query to refresh data...')
-            await queryClient.invalidateQueries({ queryKey: ['products'] })
-        },
-        onError: (error) => {
-            console.error('❌ Sync POST failed:', error)
-        },
-    })
+            const frozenTitle = p.internal_meta?.spu_title
 
-    // Fetch live data for preview (without saving)
-    const handleSyncPreview = async () => {
-        console.log('🔄 handleSyncPreview called')
-        setIsLoadingPreview(true)
-        try {
-            console.log('📡 Fetching Shopify live data...')
-            const liveData = await fetchShopifyData()  // Changed: use fetchShopifyData
-            console.log('✅ Shopify data fetched:', liveData?.length, 'products')
-            setPendingSyncData(liveData)
-            console.log('✅ pendingSyncData set')
-        } catch (error) {
-            console.error('❌ Failed to fetch Shopify data:', error)
-        } finally {
-            setIsLoadingPreview(false)
-            console.log('🏁 handleSyncPreview finished')
-        }
-    }
+            if (!spuMap.has(spuId)) {
+                // 提取 SPU 基础标题 (去掉变体部分)
+                const titleParts = p.title.split(' - ')
+                const derivedTitle = titleParts.length > 1 ? titleParts.slice(0, -1).join(' - ') : titleParts[0]
 
-    // Save synced data to database
-    const handleSaveSync = () => {
-        console.log('💾 handleSaveSync called, triggering POST /api/sync...')
-        syncMutation.mutate()
-    }
+                spuMap.set(spuId, {
+                    shopify_product_id: spuId,
+                    title: frozenTitle || derivedTitle,
+                    image_url: p.image_url,
+                    handle: p.handle,
+                    is_tracked: !!p.internal_meta?.is_tracked_inventory,
+                    isFrozen: !!frozenTitle,
+                    isFromStandard: !isCustom
+                } as any)
+            } else {
+                const existing = spuMap.get(spuId) as any
+                if (frozenTitle) {
+                    existing.title = frozenTitle
+                    existing.isFrozen = true
+                } else if (!existing.isFrozen && !isCustom && !existing.isFromStandard) {
+                    const titleParts = p.title.split(' - ')
+                    existing.title = titleParts.length > 1 ? titleParts.slice(0, -1).join(' - ') : titleParts[0]
+                    existing.isFromStandard = true
+                }
 
-    // Discard sync preview
-    const handleDiscardSync = () => {
-        setPendingSyncData(undefined)
-    }
-
-    // Weight update mutation
-    const weightMutation = useMutation({
-        mutationFn: updateWeights,
-        onSuccess: async (data) => {
-            console.log('✅ Weight update successful, response:', data)
-            toast.success(`Successfully updated ${data.updated} products!`, {
-                duration: 4000,
-                icon: '✅',
-            })
-            // Refetch data first to ensure fresh data from database
-            await queryClient.invalidateQueries({ queryKey: ['products'] })
-            await queryClient.refetchQueries({ queryKey: ['products'] })
-            // Then clear pending state
-            setPendingWeightData(undefined)
-        },
-        onError: (error) => {
-            console.error('❌ Weight update failed:', error)
-            toast.error('Failed to update weights. Please try again.', {
-                duration: 5000,
-                icon: '❌',
-            })
-        },
-    })
-
-    // Order sync mutation
-    const syncOrderMutation = useMutation({
-        mutationFn: syncOrders,
-        onSuccess: async (data: any) => {
-            console.log('✅ Order sync successful:', data)
-            // Save sync time
-            if (data.synced_at) {
-                setLastOrderSyncTime(data.synced_at)
-                localStorage.setItem('lastOrderSyncTime', data.synced_at)
-            }
-            toast.success(data.message || 'Orders synced successfully!', {
-                duration: 4000,
-                icon: '✅',
-            })
-            // Refresh products to update order counts
-            await queryClient.invalidateQueries({ queryKey: ['products'] })
-        },
-        onError: (error) => {
-            console.error('❌ Order sync failed:', error)
-            toast.error(error.message || 'Failed to sync orders. Please try again.', {
-                duration: 5000,
-                icon: '❌',
-            })
-        },
-    })
-
-    // Show mode selection dialog
-    const handleWeightUpdate = () => {
-        setShowModeDialog(true)
-    }
-
-    // Execute weight update with selected mode
-    const executeWeightUpdate = async (mode: 'empty' | 'all') => {
-        setShowModeDialog(false)
-        setIsLoadingWeight(true)
-        setCurrentWeightMode(mode)  // Save the mode for later use in save operation
-
-        try {
-            console.log(`⚖️ Weight update mode: ${mode}`)
-            const weightData = await fetchWeightData(mode)
-            console.log(`✅ Weight data fetched: ${weightData?.length} products`)
-
-            if (weightData.length === 0) {
-                toast(mode === 'empty' ? 'All products already have weight values' : 'No weight changes detected', {
-                    duration: 3000,
-                })
-            }
-
-            setPendingWeightData(weightData)
-        } catch (error) {
-            console.error('❌ Failed to fetch weight data:', error)
-            toast.error('Failed to fetch weight data', {
-                duration: 5000,
-            })
-        } finally {
-            setIsLoadingWeight(false)
-        }
-    }
-
-    // Save weight updates to database
-    const handleSaveWeight = () => {
-        console.log(`💾 handleSaveWeight called with mode: ${currentWeightMode}`)
-        toast.loading('Updating weights... This may take a few moments.', {
-            id: 'weight-update',
-            duration: Infinity,
-        })
-        // Pass the saved mode to the mutation
-        weightMutation.mutate(currentWeightMode, {
-            onSettled: () => {
-                toast.dismiss('weight-update')
+                if (!existing.image_url || (!isCustom && p.image_url)) {
+                    existing.image_url = p.image_url
+                }
             }
         })
-    }
-
-    // Discard weight preview
-    const handleDiscardWeight = () => {
-        setPendingWeightData(undefined)
-    }
+        return Array.from(spuMap.values()).map(({ isFrozen, isFromStandard, ...rest }: any) => rest)
+    }, [allProducts])
 
     return (
         <div className="flex h-screen">
             <Sidebar />
-            <div className="flex-1 flex flex-col overflow-hidden">
+            <div className="flex-1 flex flex-col overflow-hidden bg-[#f8f9fa]">
                 <main className="flex-1 overflow-auto">
-                    <div className="p-4">
+                    <div className="p-8 max-w-screen-2xl mx-auto">
                         {/* Header */}
-                        <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-end justify-between mb-8">
                             <div>
-                                <h1 className="text-2xl font-bold">Inventory Management</h1>
-                                <p className="text-sm text-muted-foreground">
-                                    {pendingSyncData ? (
-                                        <>
-                                            <span className="text-orange-500 font-medium">Sync Preview: </span>
-                                            {new Set(pendingSyncData.map((p: { shopify_product_id: number }) => p.shopify_product_id)).size} SPUs, {pendingSyncData.length} Variants
-                                        </>
-                                    ) : pendingWeightData ? (
-                                        <>
-                                            <span className="text-green-600 font-medium">Weight Update Preview: </span>
-                                            {pendingWeightData.filter((p: any) => p.weight !== p.shopify_weight).length} products with changes
-                                        </>
-                                    ) : products.length > 0 ? (
-                                        <>
-                                            {new Set(products.map((p: { shopify_product_id: number }) => p.shopify_product_id)).size} SPUs, {products.length} Variants
-                                        </>
-                                    ) : (
-                                        'Manage product costs, inventory, and internal data'
-                                    )}
+                                <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Active Inventory</h1>
+                                <p className="text-slate-500 mt-2 font-medium">
+                                    Manual stock tracking for selected products.
                                 </p>
                             </div>
-                            <div className="flex gap-2">
+                            <div className="flex gap-3">
                                 <Button
-                                    onClick={() => setImportDialogOpen(true)}
                                     variant="outline"
-                                    disabled={isLoading || isLoadingWeight || isLoadingPreview}
+                                    className="border-slate-200 bg-white"
+                                    onClick={() => queryClient.invalidateQueries({ queryKey: ['products'] })}
                                 >
-                                    <FileSpreadsheet className="mr-2 h-4 w-4" />
-                                    Import Excel
+                                    <RefreshCw className={isLoading ? "h-4 w-4 animate-spin" : "h-4 w-4"} />
                                 </Button>
                                 <Button
-                                    onClick={handleWeightUpdate}
-                                    disabled={isLoadingWeight || weightMutation.isPending || isLoadingPreview || syncMutation.isPending}
-                                    variant="outline"
+                                    onClick={() => setIsTrackingOpen(true)}
+                                    className="bg-black text-white hover:bg-black/90 px-6"
                                 >
-                                    <Scale className={`mr-2 h-4 w-4 ${isLoadingWeight ? 'animate-spin' : ''}`} />
-                                    {isLoadingWeight ? 'Updating...' : 'Update Weight'}
-                                </Button>
-                                <div className="flex flex-col items-start">
-                                    <Button
-                                        onClick={() => syncOrderMutation.mutate()}
-                                        disabled={syncOrderMutation.isPending || isLoadingPreview || syncMutation.isPending}
-                                        variant="outline"
-                                        className="w-full"
-                                    >
-                                        <ShoppingBag className={`mr-2 h-4 w-4 ${syncOrderMutation.isPending ? 'animate-spin' : ''}`} />
-                                        {syncOrderMutation.isPending ? 'Syncing...' : 'Sync Orders'}
-                                    </Button>
-                                    {lastOrderSyncTime && !syncOrderMutation.isPending && (
-                                        <span className="text-xs text-muted-foreground mt-1 ml-1">
-                                            Last: {new Date(lastOrderSyncTime).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} {new Date(lastOrderSyncTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
-                                        </span>
-                                    )}
-                                </div>
-                                <Button
-                                    onClick={handleSyncPreview}
-                                    disabled={isLoadingPreview || syncMutation.isPending || isLoadingWeight || weightMutation.isPending || syncOrderMutation.isPending}
-                                    variant="outline"
-                                >
-                                    <RefreshCw className={`mr-2 h-4 w-4 ${isLoadingPreview ? 'animate-spin' : ''}`} />
-                                    {isLoadingPreview ? 'Loading...' : 'Sync from Shopify'}
+                                    <Plus className="mr-2 h-4 w-4" />
+                                    Track SPU
                                 </Button>
                             </div>
                         </div>
 
-                        {/* Content */}
-                        {isLoading ? (
-                            <div className="flex items-center justify-center h-64">
-                                <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
-                            </div>
-                        ) : error ? (
-                            <div className="text-center text-destructive">
-                                Failed to load products. Please try again.
+                        {/* Content Area */}
+                        {trackedProducts.length > 0 ? (
+                            <div className="bg-white rounded-2xl shadow-sm border border-slate-200/60 overflow-hidden">
+                                <InventoryTable
+                                    products={trackedProducts}
+                                    allProducts={allProducts}
+                                    onRefresh={refetch}
+                                />
                             </div>
                         ) : (
-                            <InventoryDataTable
-                                products={products}
-                                pendingSyncData={pendingSyncData}
-                                pendingWeightData={pendingWeightData}
-                                onSaveSync={handleSaveSync}
-                                onDiscardSync={handleDiscardSync}
-                                onSaveWeight={handleSaveWeight}
-                                onDiscardWeight={handleDiscardWeight}
-                                isSyncing={syncMutation.isPending}
-                                isUpdatingWeight={weightMutation.isPending}
-                                onRefresh={() => queryClient.invalidateQueries({ queryKey: ['products'] })}
-                                dateRange={dateRange}
-                                onDateRangeChange={(range) => {
-                                    // Only update when both dates are selected
-                                    if (range?.from && range?.to) {
-                                        setDateRange(range)
-                                    }
-                                }}
-                            />
-                        )}
-                    </div>
-
-                    {/* Import Dialog */}
-                    <ImportDialog
-                        open={importDialogOpen}
-                        onOpenChange={setImportDialogOpen}
-                        onSuccess={() => {
-                            setImportDialogOpen(false)
-                            queryClient.invalidateQueries({ queryKey: ['products'] })
-                        }}
-                    />
-
-                    {/* Weight Update Mode Selection Dialog */}
-                    <Dialog open={showModeDialog} onOpenChange={setShowModeDialog}>
-                        <DialogContent className="sm:max-w-md">
-                            <DialogHeader>
-                                <DialogTitle>选择更新模式</DialogTitle>
-                                <DialogDescription>
-                                    选择如何更新产品重量数据
-                                </DialogDescription>
-                            </DialogHeader>
-
-                            <div className="space-y-3 py-4">
-                                {/* Option 1: Only Empty Values */}
+                            <div className="mt-12 flex flex-col items-center justify-center p-16 border-2 border-dashed border-slate-200 rounded-3xl bg-slate-50/50">
+                                <div className="h-16 w-16 bg-white rounded-2xl shadow-sm flex items-center justify-center mb-4">
+                                    <Layers className="h-8 w-8 text-slate-300" />
+                                </div>
+                                <h3 className="text-lg font-semibold text-slate-900">No Tracked Products</h3>
+                                <p className="text-slate-500 text-center max-w-sm mt-1">
+                                    Select specific SPU products from your catalog to start recording physical inventory.
+                                </p>
                                 <Button
-                                    onClick={() => executeWeightUpdate('empty')}
-                                    className="w-full justify-start h-auto p-4 text-left"
                                     variant="outline"
+                                    onClick={() => setIsTrackingOpen(true)}
+                                    className="mt-6 bg-white"
                                 >
-                                    <div className="flex-1">
-                                        <div className="font-semibold flex items-center gap-2 mb-1">
-                                            <Scale className="h-4 w-4" />
-                                            仅更新空值
-                                        </div>
-                                        <div className="text-sm text-muted-foreground font-normal">
-                                            只检查当前 weight 为空的产品，速度快（推荐用于日常维护）
-                                        </div>
-                                    </div>
-                                </Button>
-
-                                {/* Option 2: Check All Changes */}
-                                <Button
-                                    onClick={() => executeWeightUpdate('all')}
-                                    className="w-full justify-start h-auto p-4 text-left"
-                                    variant="outline"
-                                >
-                                    <div className="flex-1">
-                                        <div className="font-semibold flex items-center gap-2 mb-1">
-                                            <RefreshCw className="h-4 w-4" />
-                                            检查所有变动
-                                        </div>
-                                        <div className="text-sm text-muted-foreground font-normal">
-                                            检查所有产品的 weight 变化，耗时较长（完整同步）
-                                        </div>
-                                    </div>
+                                    Select Products to Record
                                 </Button>
                             </div>
-                        </DialogContent>
-                    </Dialog>
+                        )}
+                    </div>
                 </main>
             </div>
+
+            {/* Selection Dialog */}
+            <TrackingDialog
+                open={isTrackingOpen}
+                onOpenChange={setIsTrackingOpen}
+                availableSPUs={availableSPUs}
+                onSuccess={() => queryClient.invalidateQueries({ queryKey: ['products'] })}
+            />
         </div>
     )
 }

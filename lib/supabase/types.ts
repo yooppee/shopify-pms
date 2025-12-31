@@ -105,11 +105,19 @@ export interface Database {
     }
 }
 
-// Enhanced Product type with calculated fields for UI
 export interface ProductWithCalculations extends Product {
     gross_profit?: number
     live_price?: number
     live_inventory?: number
     has_changes?: boolean
     order_count?: number
+    sold_since_update?: number
+    sold_breakdown?: Array<{
+        title: string
+        qty: number
+        weight: number
+        is_direct?: boolean
+        is_link?: boolean
+        variant_title?: string
+    }>
 }

@@ -10,15 +10,21 @@ import {
     Settings,
     PanelLeftClose,
     PanelLeftOpen,
-    CreditCard
+    CreditCard,
+    Boxes
 } from 'lucide-react'
 import { useSidebar } from '@/components/providers/sidebar-provider'
 
 const navigation = [
     {
+        name: 'Product Management',
+        href: '/products',
+        icon: Package,
+    },
+    {
         name: 'Inventory',
         href: '/inventory',
-        icon: Package,
+        icon: Boxes,
     },
     {
         name: 'Listings',

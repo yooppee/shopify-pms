@@ -85,7 +85,7 @@ export function ImportDialog({ open, onOpenChange, onSuccess }: ImportDialogProp
         }}>
             <DialogContent className="sm:max-w-[500px]">
                 <DialogHeader>
-                    <DialogTitle>Import Inventory Data</DialogTitle>
+                    <DialogTitle>Import Product Data</DialogTitle>
                     <DialogDescription>
                         Update cost, vendor, notes, and other internal data using an Excel file.
                     </DialogDescription>

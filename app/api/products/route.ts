@@ -41,7 +41,7 @@ export async function GET(request: NextRequest) {
             .from('products')
             .select('*')
             .order('shopify_product_id', { ascending: true })
-            .range(0, 9999) // Explicitly request more rows
+            .range(0, 9999)
 
         if (error) {
             console.error('Supabase fetch error:', error)
@@ -51,60 +51,162 @@ export async function GET(request: NextRequest) {
             )
         }
 
-        // Fetch order counts if date range is provided
-        const orderCounts: Record<number, number> = {}
+        // Initialize order count map for general product management
+        const dateRangeOrderCounts: Record<number, number> = {}
         if (startDate && endDate) {
-            console.log(`📊 Fetching orders between ${startDate} and ${endDate}`)
             const { data: lineItems, error: orderError } = await supabase
                 .from('order_line_items')
                 .select('variant_id, quantity, orders!inner(created_at)')
                 .gte('orders.created_at', startDate)
                 .lte('orders.created_at', endDate)
 
-            if (orderError) {
-                console.error('Failed to fetch order stats:', orderError)
-            } else if (lineItems) {
+            if (!orderError && lineItems) {
                 lineItems.forEach((item: any) => {
                     const vid = item.variant_id
                     const qty = item.quantity || 0
                     if (vid) {
-                        orderCounts[vid] = (orderCounts[vid] || 0) + qty
+                        dateRangeOrderCounts[vid] = (dateRangeOrderCounts[vid] || 0) + qty
                     }
                 })
-                console.log(`📊 Found order stats for ${Object.keys(orderCounts).length} variants`)
             }
         }
 
-        const productsWithCounts = products?.map(p => ({
+        // Calculate sold_since_update for tracked products
+        const trackedProducts = products?.filter(p => p.internal_meta?.is_tracked_inventory) || []
+        const variantSoldMap: Record<number, number> = {}
+        const variantBreakdownMap: Record<number, any[]> = {}
+
+        if (trackedProducts.length > 0) {
+            // Need to fetch sales for:
+            // 1. The tracked variants themselves
+            // 2. Any variants linked via sales_links
+            const linkedVariantIds = new Set<number>()
+            trackedProducts.forEach(p => {
+                const links = p.internal_meta?.sales_links || []
+                links.forEach((l: any) => linkedVariantIds.add(l.variant_id))
+            })
+
+            const allNeededVariantIds = Array.from(new Set([
+                ...trackedProducts.map(p => p.variant_id),
+                ...Array.from(linkedVariantIds)
+            ]))
+
+            // Find the earliest update timestamp
+            const timestamps = trackedProducts
+                .map(p => p.internal_meta?.inventory_updated_at)
+                .filter(Boolean) as string[]
+
+            if (timestamps.length > 0) {
+                const earliestDate = new Date(Math.min(...timestamps.map(t => new Date(t).getTime()))).toISOString()
+
+                // Fetch line items for ALL needed variants
+                const { data: recentLineItems, error: orderError } = await supabase
+                    .from('order_line_items')
+                    .select(`
+                        variant_id, 
+                        quantity, 
+                        orders!inner(processed_at, created_at)
+                    `)
+                    .in('variant_id', allNeededVariantIds)
+                    .or(`processed_at.gte.${earliestDate},created_at.gte.${earliestDate}`, { foreignTable: 'orders' })
+
+                if (orderError) {
+                    console.error('Failed to fetch recent sales:', orderError)
+                } else if (recentLineItems) {
+                    // Create a helper map for all sales since earliest date
+                    // variantId -> Array<{time: number, qty: number}>
+                    const salesData: Record<number, { time: number, qty: number }[]> = {}
+                    recentLineItems.forEach((item: any) => {
+                        const vid = item.variant_id
+                        const time = new Date(item.orders?.processed_at || item.orders?.created_at).getTime()
+                        if (!salesData[vid]) salesData[vid] = []
+                        salesData[vid].push({ time, qty: item.quantity || 0 })
+                    })
+
+                    // Now calculate for each tracked product
+                    trackedProducts.forEach(product => {
+                        const vid = product.variant_id
+                        const updateTimeStr = product.internal_meta?.inventory_updated_at
+                        if (!updateTimeStr) return
+                        const updateTime = new Date(updateTimeStr).getTime()
+
+                        let totalSold = 0
+                        const breakdown: any[] = []
+
+                        // 1. Own sales (for standard variants or if custom has direct sales)
+                        const ownSales = salesData[vid]
+                            ? salesData[vid].filter(s => s.time > updateTime).reduce((sum, s) => sum + s.qty, 0)
+                            : 0
+
+                        if (ownSales > 0 || !product.internal_meta?.custom_variant) {
+                            totalSold += ownSales
+                            breakdown.push({
+                                title: 'Direct Sales',
+                                qty: ownSales,
+                                weight: 1,
+                                is_direct: true
+                            })
+
+                            // For standard SKUs, also populate their entry in the global map
+                            if (!variantSoldMap[vid]) {
+                                variantSoldMap[vid] = ownSales
+                                variantBreakdownMap[vid] = [{
+                                    title: 'Direct Sales',
+                                    qty: ownSales,
+                                    weight: 1,
+                                    is_direct: true
+                                }]
+                            }
+                        }
+
+                        // 2. Linked sales
+                        const links = product.internal_meta?.sales_links || []
+                        links.forEach((link: any) => {
+                            const linkedVid = link.variant_id
+                            const weight = link.weight || 1
+                            const linkedSales = salesData[linkedVid]
+                                ? salesData[linkedVid].filter(s => s.time > updateTime).reduce((sum, s) => sum + s.qty, 0)
+                                : 0
+
+                            const weightedSales = linkedSales * weight
+                            totalSold += weightedSales
+                            breakdown.push({
+                                title: link.title,
+                                qty: linkedSales,
+                                weight: weight,
+                                is_link: true
+                            })
+
+                            // Populate data for the linked variant itself so it shows in the table as a source
+                            if (!variantSoldMap[linkedVid]) {
+                                variantSoldMap[linkedVid] = linkedSales
+                                variantBreakdownMap[linkedVid] = [{
+                                    title: 'Direct Sales',
+                                    qty: linkedSales,
+                                    weight: 1,
+                                    is_direct: true
+                                }]
+                            }
+                        })
+
+                        variantSoldMap[vid] = totalSold
+                        variantBreakdownMap[vid] = breakdown
+                    })
+                }
+            }
+        }
+
+        const productsWithCalculations = products?.map(p => ({
             ...p,
-            order_count: orderCounts[p.variant_id] || 0
+            order_count: dateRangeOrderCounts[p.variant_id] || 0,
+            sold_since_update: variantSoldMap[p.variant_id] || 0,
+            sold_breakdown: variantBreakdownMap[p.variant_id] || []
         })) || []
-
-        // Debug: Show how many products returned
-        console.log(`📊 Fetched ${products?.length || 0} products from DATABASE`)
-
-        // Check if there are duplicate variant_ids in the response
-        const variantIds = products?.map(p => p.variant_id) || []
-        const uniqueIds = new Set(variantIds)
-        if (variantIds.length !== uniqueIds.size) {
-            console.warn(`⚠️ Duplicate variant_ids in database response!`)
-        }
-
-        // Debug: Compare with exact count
-        const { count: exactCount, error: countErr } = await supabase
-            .from('products')
-            .select('*', { count: 'exact', head: true })
-
-        if (!countErr && exactCount !== products?.length) {
-            console.warn(`⚠️ COUNT MISMATCH! SELECT returned ${products?.length} but COUNT shows ${exactCount}`)
-            console.warn(`   This may indicate Supabase is limiting results or RLS is filtering rows`)
-        }
 
         const response = NextResponse.json({
             success: true,
-            products: productsWithCounts,
+            products: productsWithCalculations,
             count: products?.length || 0,
-            exactDbCount: exactCount, // Add this for debugging
         })
 
         // Prevent any caching

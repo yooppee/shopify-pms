@@ -41,6 +41,9 @@ export async function GET(request: NextRequest) {
             )
         }
 
+        // Filter out custom variants that are only for Inventory
+        const filteredProducts = products?.filter(p => !p.internal_meta?.custom_variant) || []
+
         // Create workbook and worksheet
         const workbook = new ExcelJS.Workbook()
         const worksheet = workbook.addWorksheet('Inventory Update')
@@ -66,7 +69,7 @@ export async function GET(request: NextRequest) {
 
         // Add validations/instructions (optional)
         // Add data rows
-        products?.forEach(product => {
+        filteredProducts.forEach(product => {
             const meta = product.internal_meta || {}
 
             // Determine display title

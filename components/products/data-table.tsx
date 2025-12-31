@@ -77,7 +77,7 @@ interface PendingChange {
     value: any
 }
 
-interface InventoryDataTableProps {
+interface ProductDataTableProps {
     products: ProductWithCalculations[]
     pendingSyncData?: ProductWithCalculations[] // New prop for sync preview
     pendingWeightData?: any[] // New prop for weight update preview
@@ -105,7 +105,7 @@ const formatTimestamp = (isoString: string | null | undefined) => {
     })
 }
 
-export function InventoryDataTable({
+export function ProductDataTable({
     products,
     pendingSyncData,
     pendingWeightData,
@@ -118,7 +118,7 @@ export function InventoryDataTable({
     onRefresh,
     dateRange,
     onDateRangeChange,
-}: InventoryDataTableProps) {
+}: ProductDataTableProps) {
     const [sorting, setSorting] = useState<SortingState>([{ id: 'created_at', desc: true }])
     const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
     const [globalFilter, setGlobalFilter] = useState('')
@@ -147,7 +147,7 @@ export function InventoryDataTable({
     })
     const [columnOrder, setColumnOrder] = useState<ColumnOrderState>(() => {
         if (typeof window !== 'undefined') {
-            const saved = localStorage.getItem('inventory-column-order')
+            const saved = localStorage.getItem('product-column-order')
             if (saved) {
                 try {
                     return JSON.parse(saved)
@@ -164,7 +164,7 @@ export function InventoryDataTable({
     // Text overflow mode: 'wrap' allows text to wrap, 'truncate' hides overflow with ellipsis
     const [textOverflowMode, setTextOverflowMode] = useState<'wrap' | 'truncate'>(() => {
         if (typeof window !== 'undefined') {
-            const saved = localStorage.getItem('inventory-text-overflow-mode')
+            const saved = localStorage.getItem('product-text-overflow-mode')
             if (saved === 'wrap' || saved === 'truncate') {
                 return saved
             }
@@ -175,7 +175,7 @@ export function InventoryDataTable({
     // Save text overflow mode to localStorage when it changes
     useEffect(() => {
         if (typeof window !== 'undefined') {
-            localStorage.setItem('inventory-text-overflow-mode', textOverflowMode)
+            localStorage.setItem('product-text-overflow-mode', textOverflowMode)
         }
     }, [textOverflowMode])
 
@@ -240,7 +240,7 @@ export function InventoryDataTable({
         let savedMovable: string[] = []
         if (typeof window !== 'undefined') {
             try {
-                const saved = localStorage.getItem('inventory-column-order')
+                const saved = localStorage.getItem('product-column-order')
                 if (saved) savedMovable = JSON.parse(saved)
             } catch { }
         }
@@ -265,7 +265,7 @@ export function InventoryDataTable({
         newMovableOrder.splice(targetIndex, 0, sourceColumnId)
 
         // Save movable order to localStorage
-        localStorage.setItem('inventory-column-order', JSON.stringify(newMovableOrder))
+        localStorage.setItem('product-column-order', JSON.stringify(newMovableOrder))
 
         // Build full order: fixed columns (in fixed order) + new movable order
         const fixedCols = FIXED_COLS.filter(id => allColumnIds.includes(id))
@@ -614,9 +614,12 @@ export function InventoryDataTable({
             // Process existing products with diffs
             const processedNodes = Array.from(grouped.entries()).map(([spuId, variants]) => {
                 const firstVariant = variants[0]
-                // Extract base title by removing the last part (variant name) after the last ' - '
-                const titleParts = firstVariant.title.split(' - ')
-                const baseTitle = titleParts.length > 1 ? titleParts.slice(0, -1).join(' - ') : titleParts[0]
+                // 优先使用元数据中的冻结标题
+                const frozenTitle = variants.find(v => v.internal_meta?.spu_title)?.internal_meta?.spu_title
+
+                const stableVariant = variants.find(v => !v.internal_meta?.custom_variant) || variants[0]
+                const titleParts = stableVariant.title.split(' - ')
+                const baseTitle = frozenTitle || (titleParts.length > 1 ? titleParts.slice(0, -1).join(' - ') : titleParts[0])
 
                 // 计算价格范围
                 const prices = variants.map(v => v.price)
@@ -942,9 +945,12 @@ export function InventoryDataTable({
             // Sort variants by position
             variants.sort((a, b) => (a.position || 0) - (b.position || 0))
             const firstVariant = variants[0]
-            // Extract base title by removing the last part (variant name) after the last ' - '
-            const titleParts = firstVariant.title.split(' - ')
-            const baseTitle = titleParts.length > 1 ? titleParts.slice(0, -1).join(' - ') : titleParts[0]
+            // 优先使用元数据中的冻结标题
+            const frozenTitle = variants.find(v => v.internal_meta?.spu_title)?.internal_meta?.spu_title
+
+            const stableVariant = variants.find(v => !v.internal_meta?.custom_variant) || variants[0]
+            const titleParts = stableVariant.title.split(' - ')
+            const baseTitle = frozenTitle || (titleParts.length > 1 ? titleParts.slice(0, -1).join(' - ') : titleParts[0])
 
             // 计算价格范围
             const prices = variants.map(v => v.price)

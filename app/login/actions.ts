@@ -19,7 +19,7 @@ export async function login(formData: FormData) {
     }
 
     revalidatePath('/', 'layout')
-    redirect('/inventory')
+    redirect('/products')
 }
 
 export async function logout() {
