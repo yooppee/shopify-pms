@@ -1004,7 +1004,7 @@ export function InventoryTable({ products, allProducts, onRefresh }: InventoryTa
                 </table>
                 {data.length === 0 && (
                     <div className="py-20 text-center text-slate-400 text-sm">
-                        No tracked products found. Use the "Track SPU" button to add some.
+                        No tracked products found. Use the &quot;Track SPU&quot; button to add some.
                     </div>
                 )}
             </div>

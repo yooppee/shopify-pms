@@ -5,12 +5,11 @@ import { Badge } from '@/components/ui/badge'
 import { AlertCircle } from 'lucide-react'
 
 interface SyncIndicatorProps {
-    field: string
     dbValue: number | null
     liveValue: number | null
 }
 
-export function SyncIndicator({ field, dbValue, liveValue }: SyncIndicatorProps) {
+export function SyncIndicator({ dbValue, liveValue }: SyncIndicatorProps) {
     const hasChanges = dbValue !== liveValue
 
     if (!hasChanges) {

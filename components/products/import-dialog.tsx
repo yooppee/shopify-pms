@@ -2,7 +2,7 @@ import { useState, useRef } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Upload, Download, FileSpreadsheet, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react'
+import { Upload, Download, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react'
 import { toast } from 'react-hot-toast'
 
 interface ImportDialogProps {
