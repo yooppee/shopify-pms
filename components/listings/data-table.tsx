@@ -871,7 +871,7 @@ export function ListingsDataTable({
                             <Button
                                 variant="ghost"
                                 size="sm"
-                                onClick={() => onDeleteVariant?.(row.original.id, row.original.parentId || '')}
+                                onClick={() => onDeleteVariant?.(row.original.variantId || '', row.original.parentId || '')}
                                 title="Delete Variant"
                                 className="text-destructive hover:text-destructive h-6 w-6 p-0"
                             >
