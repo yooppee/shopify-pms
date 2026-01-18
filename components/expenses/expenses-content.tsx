@@ -7,11 +7,12 @@ import { ProductCostTable } from './product-cost-table'
 import { ProcurementCostTable } from './procurement-cost-table'
 import { LogisticsCostTable } from './logistics-cost-table'
 import { OperatingCostTable } from './operating-cost-table'
+import { SettledCostTable } from './settled-cost-table'
 import { SummaryDashboard } from './summary-dashboard'
 // import { procurementData as initialProcurementData, logisticsData as initialLogisticsData, operatingData as initialOperatingData } from '@/app/api/expenses/mock-data'
 import { ExpenseRecord } from './generic-expense-table'
 
-type Tab = 'summary' | 'product_cost' | 'procurement' | 'logistics' | 'operational'
+type Tab = 'summary' | 'product_cost' | 'procurement' | 'logistics' | 'operational' | 'settled'
 
 export function ExpensesContent() {
     const [activeTab, setActiveTab] = useState<Tab>('summary') // Default to summary or keep product_cost
@@ -20,11 +21,13 @@ export function ExpensesContent() {
     const [procurementData, setProcurementData] = useState<ExpenseRecord[]>([])
     const [logisticsData, setLogisticsData] = useState<ExpenseRecord[]>([])
     const [operatingData, setOperatingData] = useState<ExpenseRecord[]>([])
+    const [settledData, setSettledData] = useState<ExpenseRecord[]>([])
 
     // Original State for Change Tracking
     const [originalProcurementData, setOriginalProcurementData] = useState<ExpenseRecord[]>([])
     const [originalLogisticsData, setOriginalLogisticsData] = useState<ExpenseRecord[]>([])
     const [originalOperatingData, setOriginalOperatingData] = useState<ExpenseRecord[]>([])
+    const [originalSettledData, setOriginalSettledData] = useState<ExpenseRecord[]>([])
 
     const [isLoading, setIsLoading] = useState(true)
     const [isSaving, setIsSaving] = useState(false)
@@ -86,6 +89,7 @@ export function ExpensesContent() {
     const procurementChanges = getUnsavedCount(procurementData, originalProcurementData)
     const logisticsChanges = getUnsavedCount(logisticsData, originalLogisticsData)
     const operatingChanges = getUnsavedCount(operatingData, originalOperatingData)
+    const settledChanges = getUnsavedCount(settledData, originalSettledData)
 
 
     // Initial Fetch
@@ -94,16 +98,18 @@ export function ExpensesContent() {
             setIsLoading(true)
             try {
                 // Fetch all types in parallel
-                const [procurementRes, logisticsRes, operatingRes] = await Promise.all([
+                const [procurementRes, logisticsRes, operatingRes, settledRes] = await Promise.all([
                     fetch('/api/expenses?type=procurement'),
                     fetch('/api/expenses?type=logistics'),
-                    fetch('/api/expenses?type=operating')
+                    fetch('/api/expenses?type=operating'),
+                    fetch('/api/expenses?type=settled')
                 ])
 
-                const [procurementJson, logisticsJson, operatingJson] = await Promise.all([
+                const [procurementJson, logisticsJson, operatingJson, settledJson] = await Promise.all([
                     procurementRes.json(),
                     logisticsRes.json(),
-                    operatingRes.json()
+                    operatingRes.json(),
+                    settledRes.json()
                 ])
 
                 if (procurementJson.success) {
@@ -133,6 +139,15 @@ export function ExpensesContent() {
                     setOperatingData(hierarchicalData)
                     setOriginalOperatingData(hierarchicalData)
                 }
+                if (settledJson.success) {
+                    const data = settledJson.data.map((r: any) => ({
+                        ...r,
+                        date: r.date ? new Date(r.date) : new Date()
+                    }))
+                    const hierarchicalData = buildHierarchy(data)
+                    setSettledData(hierarchicalData)
+                    setOriginalSettledData(hierarchicalData)
+                }
 
             } catch (error) {
                 console.error("Failed to fetch expenses:", error)
@@ -161,24 +176,137 @@ export function ExpensesContent() {
         return roots
     }
 
-    const handleSave = async (type: 'procurement' | 'logistics' | 'operating', currentData: ExpenseRecord[], originalData: ExpenseRecord[]) => {
+    const handleSave = async (type: 'procurement' | 'logistics' | 'operating' | 'settled', currentData: ExpenseRecord[], originalData: ExpenseRecord[]) => {
         setIsSaving(true)
         try {
-            await fetch('/api/expenses', {
+            const response = await fetch('/api/expenses', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ type, expenses: currentData })
             })
 
+            if (!response.ok) {
+                const errorData = await response.json()
+                throw new Error(errorData.error || 'Failed to save changes')
+            }
+
             // Update originals to match current state
             if (type === 'procurement') setOriginalProcurementData(currentData)
             if (type === 'logistics') setOriginalLogisticsData(currentData)
             if (type === 'operating') setOriginalOperatingData(currentData)
+            if (type === 'settled') setOriginalSettledData(currentData)
 
             toast.success("Changes saved successfully")
         } catch (error) {
             console.error("Failed to save changes:", error)
             toast.error("Failed to save changes")
+        } finally {
+            setIsSaving(false)
+        }
+    }
+
+    const handleSettle = async (sourceType: Tab, selectedIds: string[]) => {
+        const idsSet = new Set(selectedIds)
+        let sourceData: ExpenseRecord[] = []
+        let setSourceData: (data: ExpenseRecord[]) => void = () => { }
+        let originalSourceData: ExpenseRecord[] = []
+        let sourceApiType: 'procurement' | 'logistics' | 'operating' = 'procurement'
+
+        if (sourceType === 'procurement') {
+            sourceData = procurementData
+            setSourceData = setProcurementData
+            originalSourceData = originalProcurementData
+            sourceApiType = 'procurement'
+        } else if (sourceType === 'logistics') {
+            sourceData = logisticsData
+            setSourceData = setLogisticsData
+            originalSourceData = originalLogisticsData
+            sourceApiType = 'logistics'
+        } else if (sourceType === 'operational') {
+            sourceData = operatingData
+            setSourceData = setOperatingData
+            originalSourceData = originalOperatingData
+            sourceApiType = 'operating'
+        } else {
+            return
+        }
+
+        // Helper to extract and remove nodes
+        const extractAndRemove = (nodes: ExpenseRecord[]): { kept: ExpenseRecord[], removed: ExpenseRecord[] } => {
+            let keptNodes: ExpenseRecord[] = []
+            let removedNodes: ExpenseRecord[] = []
+
+            for (const node of nodes) {
+                if (idsSet.has(node.id)) {
+                    removedNodes.push(node)
+                } else {
+                    if (node.children) {
+                        const { kept, removed } = extractAndRemove(node.children)
+                        if (removed.length > 0) {
+                            removedNodes = [...removedNodes, ...removed]
+                        }
+                        keptNodes.push({ ...node, children: kept })
+                    } else {
+                        keptNodes.push(node)
+                    }
+                }
+            }
+            return { kept: keptNodes, removed: removedNodes }
+        }
+
+        const { kept, removed } = extractAndRemove(sourceData)
+
+        // Transform removed items for settled table
+        const transferredItems = removed.map(item => ({
+            ...item,
+            id: crypto.randomUUID(), // New ID to avoid conflicts
+            isTransferred: true,
+            isNew: true,
+            isGroup: false,
+            children: [],
+            parentId: undefined
+        }))
+
+        // Update local state first
+        setSourceData(kept)
+        const newSettledData = [...settledData, ...transferredItems]
+        setSettledData(newSettledData)
+
+        // Auto-save both tables
+        setIsSaving(true)
+        try {
+            // Save source table (with removed items gone)
+            const sourceRes = await fetch('/api/expenses', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ type: sourceApiType, expenses: kept })
+            })
+            if (!sourceRes.ok) {
+                const errorData = await sourceRes.json()
+                throw new Error(`Failed to update source table: ${errorData.error}`)
+            }
+
+            // Save settled table (with new transferred items)
+            const settledRes = await fetch('/api/expenses', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ type: 'settled', expenses: newSettledData })
+            })
+            if (!settledRes.ok) {
+                const errorData = await settledRes.json()
+                throw new Error(`Failed to update settled table: ${errorData.error}`)
+            }
+
+            // Update original data to reflect saved state
+            if (sourceType === 'procurement') setOriginalProcurementData(kept)
+            if (sourceType === 'logistics') setOriginalLogisticsData(kept)
+            if (sourceType === 'operational') setOriginalOperatingData(kept)
+            setOriginalSettledData(newSettledData)
+
+            toast.success(`Moved ${transferredItems.length} items to Settled Expenses and saved`)
+        } catch (error) {
+            console.error('Failed to save settlement:', error)
+            toast.error('Failed to save settlement changes')
         } finally {
             setIsSaving(false)
         }
@@ -190,6 +318,7 @@ export function ExpensesContent() {
         { id: 'procurement', label: '采购费用' },
         { id: 'logistics', label: '物流费用' },
         { id: 'operational', label: '运营费用' },
+        { id: 'settled', label: '已结算费用' },
     ]
 
     return (
@@ -241,6 +370,7 @@ export function ExpensesContent() {
                             isSaving={isSaving}
                             unsavedCount={procurementChanges}
                             onDiscard={() => setProcurementData(structuredClone(originalProcurementData))}
+                            onSettle={(ids) => handleSettle('procurement', ids)}
                         />
                     )}
 
@@ -252,6 +382,7 @@ export function ExpensesContent() {
                             isSaving={isSaving}
                             unsavedCount={logisticsChanges}
                             onDiscard={() => setLogisticsData(structuredClone(originalLogisticsData))}
+                            onSettle={(ids) => handleSettle('logistics', ids)}
                         />
                     )}
 
@@ -263,6 +394,18 @@ export function ExpensesContent() {
                             isSaving={isSaving}
                             unsavedCount={operatingChanges}
                             onDiscard={() => setOperatingData(structuredClone(originalOperatingData))}
+                            onSettle={(ids) => handleSettle('operational', ids)}
+                        />
+                    )}
+
+                    {activeTab === 'settled' && (
+                        <SettledCostTable
+                            data={settledData}
+                            onDataChange={setSettledData}
+                            onSave={() => handleSave('settled', settledData, originalSettledData)}
+                            isSaving={isSaving}
+                            unsavedCount={settledChanges}
+                            onDiscard={() => setSettledData(structuredClone(originalSettledData))}
                         />
                     )}
                 </div>

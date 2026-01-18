@@ -12,7 +12,7 @@ import {
     ExpandedState,
     getExpandedRowModel,
 } from "@tanstack/react-table"
-import { Trash2, Plus, Search as SearchIcon, Calendar as CalendarIcon, Save, Loader2, Filter, RotateCcw, Layers, ChevronRight, ChevronDown, FolderOpen, Folder, Minimize2 } from "lucide-react"
+import { Trash2, Plus, Search as SearchIcon, Calendar as CalendarIcon, Save, Loader2, Filter, RotateCcw, Layers, ChevronRight, ChevronDown, FolderOpen, Folder, Minimize2, Check } from "lucide-react"
 import { format, subDays, isWithinInterval } from "date-fns"
 import { DateRange } from "react-day-picker"
 
@@ -69,6 +69,7 @@ export type ExpenseRecord = {
     lastModified?: Date | null
     lastModifiedColumn?: string
     isNew?: boolean
+    isTransferred?: boolean
 }
 
 interface GenericExpenseTableProps {
@@ -78,9 +79,10 @@ interface GenericExpenseTableProps {
     onDiscard?: () => void
     isSaving?: boolean
     unsavedCount?: number
+    onSettle?: (selectedIds: string[]) => void
 }
 
-export function GenericExpenseTable({ data: initialData, onDataChange, onSave, isSaving, unsavedCount, onDiscard }: GenericExpenseTableProps) {
+export function GenericExpenseTable({ data: initialData, onDataChange, onSave, isSaving, unsavedCount, onDiscard, onSettle }: GenericExpenseTableProps) {
     const [sorting, setSorting] = React.useState<SortingState>([])
     const [data, setData] = React.useState<ExpenseRecord[]>(initialData)
 
@@ -108,6 +110,8 @@ export function GenericExpenseTable({ data: initialData, onDataChange, onSave, i
 
     const [isGroupMode, setIsGroupMode] = React.useState(false)
     const [selectedForGroup, setSelectedForGroup] = React.useState<Set<string>>(new Set())
+    const [isSettlementMode, setIsSettlementMode] = React.useState(false)
+    const [selectedForSettlement, setSelectedForSettlement] = React.useState<Set<string>>(new Set())
     const [expanded, setExpanded] = React.useState<ExpandedState>({})
 
     const [searchTerm, setSearchTerm] = React.useState('')
@@ -394,6 +398,27 @@ export function GenericExpenseTable({ data: initialData, onDataChange, onSave, i
         }
     }
 
+    const handleSettlementToggle = (id: string) => {
+        const newSelected = new Set(selectedForSettlement)
+        if (newSelected.has(id)) {
+            newSelected.delete(id)
+        } else {
+            newSelected.add(id)
+        }
+        setSelectedForSettlement(newSelected)
+    }
+
+    const handleSettlementSelectAllToggle = (checked: boolean) => {
+        if (checked) {
+            // Select all eligible rows (non-group, non-transferred)
+            const allRows = flattenExpenses(data)
+            const eligibleRows = allRows.filter(r => !r.isGroup && !r.isTransferred)
+            setSelectedForSettlement(new Set(eligibleRows.map(r => r.id)))
+        } else {
+            setSelectedForSettlement(new Set())
+        }
+    }
+
     const columns: ColumnDef<ExpenseRecord>[] = React.useMemo(() => [
         ...(isDeleteMode ? [{
             id: 'delete',
@@ -424,6 +449,37 @@ export function GenericExpenseTable({ data: initialData, onDataChange, onSave, i
                     </button>
                 </div>
             ),
+            size: 40,
+        } as ColumnDef<ExpenseRecord>] : []),
+        ...(isSettlementMode ? [{
+            id: 'settle-select',
+            header: () => {
+                const eligibleRows = data.filter(row => !row.isGroup && !row.isTransferred) // Only non-group, non-transferred rows are eligible
+                const allSelected = eligibleRows.length > 0 && eligibleRows.every(row => selectedForSettlement.has(row.id))
+
+                return (
+                    <div className="flex items-center justify-center">
+                        <Checkbox
+                            checked={allSelected}
+                            onCheckedChange={handleSettlementSelectAllToggle}
+                            aria-label="Select all for settlement"
+                        />
+                    </div>
+                )
+            },
+            cell: ({ row }) => {
+                if (row.original.isGroup || row.original.isTransferred) return null
+
+                return (
+                    <div className="flex items-center justify-center">
+                        <Checkbox
+                            checked={selectedForSettlement.has(row.original.id)}
+                            onCheckedChange={() => handleSettlementToggle(row.original.id)}
+                            aria-label="Select row for settlement"
+                        />
+                    </div>
+                )
+            },
             size: 40,
         } as ColumnDef<ExpenseRecord>] : []),
         ...(isGroupMode ? [{
@@ -603,7 +659,7 @@ export function GenericExpenseTable({ data: initialData, onDataChange, onSave, i
             header: () => {
                 // Get unique suppliers for filter dropdown
                 const allSuppliers = flattenExpenses(data)
-                    .map(r => r.supplier || '')
+                    .map(r => String(r.supplier || ''))
                     .filter(s => s.trim() !== '')
                 const uniqueSuppliers = Array.from(new Set(allSuppliers)).sort()
 
@@ -741,7 +797,15 @@ export function GenericExpenseTable({ data: initialData, onDataChange, onSave, i
                 )
             },
         },
-    ] as ColumnDef<ExpenseRecord>[], [data, isDeleteMode, pendingDeletions, isGroupMode, selectedForGroup, supplierFilter, isSupplierFilterOpen])
+    ] as ColumnDef<ExpenseRecord>[], [data, isDeleteMode, pendingDeletions, isGroupMode, selectedForGroup, supplierFilter, isSupplierFilterOpen, isSettlementMode, selectedForSettlement])
+
+    const handleConfirmSettle = () => {
+        if (onSettle && selectedForSettlement.size > 0) {
+            onSettle(Array.from(selectedForSettlement))
+            setIsSettlementMode(false)
+            setSelectedForSettlement(new Set())
+        }
+    }
 
     const addRow = () => {
         const newRecord: ExpenseRecord = {
@@ -922,7 +986,31 @@ export function GenericExpenseTable({ data: initialData, onDataChange, onSave, i
                 </div>
 
                 <div className="flex justify-end gap-2">
-                    {isGroupMode ? (
+                    {isSettlementMode ? (
+                        <>
+                            <Button
+                                variant="destructive"
+                                size="sm"
+                                onClick={() => {
+                                    setIsSettlementMode(false)
+                                    setSelectedForSettlement(new Set())
+                                }}
+                                className="gap-2 h-8"
+                            >
+                                取消
+                            </Button>
+                            <Button
+                                variant="default"
+                                size="sm"
+                                onClick={handleConfirmSettle}
+                                disabled={selectedForSettlement.size === 0}
+                                className="gap-2 h-8 bg-green-600 hover:bg-green-700"
+                            >
+                                <Check className="h-4 w-4" />
+                                确认清算 ({selectedForSettlement.size})
+                            </Button>
+                        </>
+                    ) : isGroupMode ? (
                         <>
                             <Button
                                 variant="destructive"
@@ -930,7 +1018,7 @@ export function GenericExpenseTable({ data: initialData, onDataChange, onSave, i
                                 onClick={() => setIsGroupMode(false)}
                                 className="gap-2 h-8"
                             >
-                                Cancel
+                                取消
                             </Button>
                             <Button
                                 variant="default" // Primary color
@@ -940,7 +1028,7 @@ export function GenericExpenseTable({ data: initialData, onDataChange, onSave, i
                                 className="gap-2 h-8"
                             >
                                 <Layers className="h-4 w-4" />
-                                Confirm Group
+                                确认分组
                             </Button>
                         </>
                     ) : (
@@ -954,7 +1042,7 @@ export function GenericExpenseTable({ data: initialData, onDataChange, onSave, i
                                     disabled={pendingDeletions.size === 0}
                                 >
                                     <Trash2 className="mr-2 h-4 w-4" />
-                                    Confirm Delete ({pendingDeletions.size})
+                                    确认删除 ({pendingDeletions.size})
                                 </Button>
                                 <Button
                                     onClick={() => {
@@ -965,7 +1053,7 @@ export function GenericExpenseTable({ data: initialData, onDataChange, onSave, i
                                     size="sm"
                                     className="h-8"
                                 >
-                                    Cancel
+                                    取消
                                 </Button>
                             </>
                         ) : (
@@ -977,7 +1065,7 @@ export function GenericExpenseTable({ data: initialData, onDataChange, onSave, i
                                     className="h-8 border-dashed text-destructive hover:text-destructive hover:bg-destructive/10 border-destructive/20"
                                 >
                                     <Trash2 className="mr-2 h-4 w-4" />
-                                    Delete Rows
+                                    删除模式
                                 </Button>
 
                                 <Button
@@ -987,8 +1075,20 @@ export function GenericExpenseTable({ data: initialData, onDataChange, onSave, i
                                     onClick={() => setIsGroupMode(true)}
                                 >
                                     <Layers className="h-4 w-4" />
-                                    Group Rows
+                                    分组模式
                                 </Button>
+
+                                {onSettle && (
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        className="gap-2 h-8 border-dashed text-green-600 hover:text-green-700 hover:bg-green-50 border-green-200"
+                                        onClick={() => setIsSettlementMode(true)}
+                                    >
+                                        <Check className="h-4 w-4" />
+                                        清算模式
+                                    </Button>
+                                )}
                             </>
                         )
                     )}
@@ -1074,7 +1174,9 @@ export function GenericExpenseTable({ data: initialData, onDataChange, onSave, i
                                         // Add background for expanded group rows
                                         row.getIsExpanded() && (row.original.isGroup || (row.original.children && row.original.children.length > 0)) && "bg-blue-100 hover:bg-blue-200/80",
                                         // Add lighter background for child rows (depth > 0 means it's a child)
-                                        row.depth > 0 && "bg-blue-50 hover:bg-blue-100/60"
+                                        row.depth > 0 && "bg-blue-50 hover:bg-blue-100/60",
+                                        // Add green background for transferred rows
+                                        row.original.isTransferred && "bg-green-50 hover:bg-green-100/60"
                                     )}
                                 >
                                     {row.getVisibleCells().map((cell) => {

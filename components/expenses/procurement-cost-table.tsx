@@ -10,9 +10,10 @@ interface ProcurementCostTableProps {
     isSaving: boolean
     unsavedCount: number
     onDiscard: () => void
+    onSettle: (selectedIds: string[]) => void
 }
 
-export function ProcurementCostTable({ data, onDataChange, onSave, isSaving, unsavedCount, onDiscard }: ProcurementCostTableProps) {
+export function ProcurementCostTable({ data, onDataChange, onSave, isSaving, unsavedCount, onDiscard, onSettle }: ProcurementCostTableProps) {
     return (
         <div className="space-y-4">
             <div className="flex items-center justify-between">
@@ -26,6 +27,7 @@ export function ProcurementCostTable({ data, onDataChange, onSave, isSaving, uns
                 isSaving={isSaving}
                 unsavedCount={unsavedCount}
                 onDiscard={onDiscard}
+                onSettle={onSettle}
             />
         </div>
     )

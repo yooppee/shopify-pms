@@ -10,9 +10,10 @@ interface LogisticsCostTableProps {
     isSaving: boolean
     unsavedCount: number
     onDiscard: () => void
+    onSettle: (selectedIds: string[]) => void
 }
 
-export function LogisticsCostTable({ data, onDataChange, onSave, isSaving, unsavedCount, onDiscard }: LogisticsCostTableProps) {
+export function LogisticsCostTable({ data, onDataChange, onSave, isSaving, unsavedCount, onDiscard, onSettle }: LogisticsCostTableProps) {
     return (
         <div className="space-y-4">
             <div className="flex items-center justify-between">
@@ -26,6 +27,7 @@ export function LogisticsCostTable({ data, onDataChange, onSave, isSaving, unsav
                 isSaving={isSaving}
                 unsavedCount={unsavedCount}
                 onDiscard={onDiscard}
+                onSettle={onSettle}
             />
         </div>
     )

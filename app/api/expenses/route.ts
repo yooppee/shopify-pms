@@ -56,6 +56,7 @@ export async function GET(request: NextRequest) {
             supplier: row.supplier || "",
             parentId: row.parent_id,
             isGroup: row.is_group,
+            isTransferred: row.is_transferred || false,
 
             lastModified: row.last_modified ? new Date(row.last_modified) : null,
             lastModifiedColumn: row.last_modified_column,
@@ -102,6 +103,7 @@ export async function POST(request: NextRequest) {
                     parent_id: parentId,
 
                     is_group: r.isGroup || false,
+                    is_transferred: r.isTransferred || false,
                     last_modified: r.lastModified,
                     last_modified_column: r.lastModifiedColumn
                 })
@@ -115,52 +117,47 @@ export async function POST(request: NextRequest) {
         // Prepare payload by flattening
         const payload = flattenExpenses(expenses)
 
-        // Strategy: 
-        // 1. Delete all for this type that are NOT in the new list (handle deletions)
-        // 2. Upsert the new list
+        // Sync local changes to DB
+        // 1. Fetch current IDs for this type in DB
+        // 2. Identify and delete records removed from the list
+        // 3. Upsert the current list
 
         const currentIds = payload.map((p: any) => p.id)
 
-        // Delete removed records
-        if (currentIds.length > 0) {
-            await supabase
-                .from('expenses')
-                .delete()
-                .eq('type', type)
-                .not('id', 'in', `(${currentIds.join(',')})`) // careful with syntax
-        } else {
-            // If list is empty, delete all for type
-            await supabase.from('expenses').delete().eq('type', type)
-        }
-
-        // Actually, supabase .not('id', 'in', array) works better
-        const { error: deleteError } = await supabase
+        const { data: existing, error: fetchError } = await supabase
             .from('expenses')
-            .delete()
+            .select('id')
             .eq('type', type)
-            .not('id', 'in', `(${currentIds.join(',')})`)
 
-        // Wait, not('id', 'in', ...) expects a parenthesis string for raw filter? 
-        // Docs say .not('column', 'in', ['val1', 'val2'])
-        // Let's use filter syntax if possible or just use logic:
-        // Delete all then insert is risky? No transaction support via JS client easily.
-        // Better: Fetch existing IDs, calculate diff, delete diff.
+        if (fetchError) throw fetchError
 
-        const { data: existing } = await supabase.from('expenses').select('id').eq('type', type)
         const existingIds = existing?.map(r => r.id) || []
         const toDelete = existingIds.filter(id => !currentIds.includes(id))
 
         if (toDelete.length > 0) {
-            await supabase.from('expenses').delete().in('id', toDelete)
+            const { error: deleteError } = await supabase.from('expenses').delete().in('id', toDelete)
+            if (deleteError) throw deleteError
         }
 
-        // Upsert new data
+        // Upsert new/updated data
         if (payload.length > 0) {
             const { error: upsertError } = await supabase
                 .from('expenses')
                 .upsert(payload)
 
-            if (upsertError) throw upsertError
+            if (upsertError) {
+                // If it fails because of is_transferred column missing, try again without it
+                if (upsertError.message.includes('is_transferred') || upsertError.code === '42703') {
+                    console.warn('is_transferred column missing in DB, retrying without it...')
+                    const simplifiedPayload = payload.map(({ is_transferred, ...rest }) => rest)
+                    const { error: retryError } = await supabase
+                        .from('expenses')
+                        .upsert(simplifiedPayload)
+                    if (retryError) throw retryError
+                } else {
+                    throw upsertError
+                }
+            }
         }
 
         return NextResponse.json({ success: true })
