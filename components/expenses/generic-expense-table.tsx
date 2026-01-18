@@ -62,6 +62,7 @@ export type ExpenseRecord = {
     amountRMB: number
     amountUSD: number
     person: string
+    supplier?: string  // 采购商
     children?: ExpenseRecord[]
     isGroup?: boolean
     parentId?: string | null
@@ -110,6 +111,8 @@ export function GenericExpenseTable({ data: initialData, onDataChange, onSave, i
     const [expanded, setExpanded] = React.useState<ExpandedState>({})
 
     const [searchTerm, setSearchTerm] = React.useState('')
+    const [supplierFilter, setSupplierFilter] = React.useState<string>('')  // 对接商筛选
+    const [isSupplierFilterOpen, setIsSupplierFilterOpen] = React.useState(false)  // 对接商筛选弹窗状态
     const [statsColumn, setStatsColumn] = React.useState<string>('amountRMB')
     const [statsType, setStatsType] = React.useState<'sum' | 'avg'>('sum')
     const [statsDateRange, setStatsDateRange] = React.useState<DateRange | undefined>(undefined)
@@ -123,6 +126,7 @@ export function GenericExpenseTable({ data: initialData, onDataChange, onSave, i
 
     const filteredData = React.useMemo(() => {
         const lowerTerm = searchTerm.toLowerCase()
+        const lowerSupplier = supplierFilter.toLowerCase()
         const checkDate = (date?: Date) => {
             if (!statsDateRange?.from || !date) return true
             const d = new Date(date)
@@ -139,7 +143,8 @@ export function GenericExpenseTable({ data: initialData, onDataChange, onSave, i
             if (!node.isGroup) {
                 const matchesSearch = !searchTerm || node.item.toLowerCase().includes(lowerTerm)
                 const matchesDate = !statsDateRange?.from || checkDate(node.date)
-                return (matchesSearch && matchesDate) ? node : null
+                const matchesSupplier = !supplierFilter || (node.supplier || '').toLowerCase().includes(lowerSupplier)
+                return (matchesSearch && matchesDate && matchesSupplier) ? node : null
             }
 
             // Group node: check children
@@ -155,7 +160,7 @@ export function GenericExpenseTable({ data: initialData, onDataChange, onSave, i
         }
 
         return data.map(filterNode).filter(Boolean) as ExpenseRecord[]
-    }, [data, searchTerm, statsDateRange])
+    }, [data, searchTerm, statsDateRange, supplierFilter])
 
     const statsValue = React.useMemo(() => {
         const flatData = flattenExpenses(filteredData)
@@ -301,6 +306,77 @@ export function GenericExpenseTable({ data: initialData, onDataChange, onSave, i
 
         const children = group.children.map(c => ({ ...c, parentId: null }))
         const newData = data.filter(r => r.id !== group.id).concat(children)
+
+        setData(newData)
+        updateParent(newData)
+    }
+
+    // Add selected ungrouped rows to an existing group
+    const handleAddToGroup = (groupId: string) => {
+        if (selectedForGroup.size === 0) return
+
+        const updateRecursive = (nodes: ExpenseRecord[]): ExpenseRecord[] => {
+            return nodes.map(node => {
+                if (node.id === groupId && node.isGroup) {
+                    // Find selected rows from top-level data
+                    const rowsToAdd = data.filter(r => selectedForGroup.has(r.id) && !r.isGroup)
+                    const newChildren = [
+                        ...(node.children || []),
+                        ...rowsToAdd.map(r => ({ ...r, parentId: groupId }))
+                    ]
+                    return { ...node, children: newChildren }
+                }
+                if (node.children) {
+                    return { ...node, children: updateRecursive(node.children) }
+                }
+                return node
+            })
+        }
+
+        // Remove selected rows from top level and add to group
+        const updatedData = updateRecursive(data).filter(r => !selectedForGroup.has(r.id) || r.isGroup)
+
+        setData(updatedData)
+        updateParent(updatedData)
+        setSelectedForGroup(new Set())
+        // Auto-expand the group
+        setExpanded((prev) => ({ ...(prev as Record<string, boolean>), [groupId]: true }))
+    }
+
+    // Remove a single child row from its parent group
+    const handleRemoveFromGroup = (childId: string, parentId: string) => {
+        const updateRecursive = (nodes: ExpenseRecord[]): ExpenseRecord[] => {
+            return nodes.map(node => {
+                if (node.id === parentId && node.isGroup && node.children) {
+                    // Remove the child from this group
+                    const newChildren = node.children.filter(c => c.id !== childId)
+                    return { ...node, children: newChildren }
+                }
+                if (node.children) {
+                    return { ...node, children: updateRecursive(node.children) }
+                }
+                return node
+            })
+        }
+
+        // Find the child row to move to top level
+        const findChild = (nodes: ExpenseRecord[]): ExpenseRecord | null => {
+            for (const node of nodes) {
+                if (node.id === childId) return node
+                if (node.children) {
+                    const found = findChild(node.children)
+                    if (found) return found
+                }
+            }
+            return null
+        }
+
+        const childRow = findChild(data)
+        if (!childRow) return
+
+        const updatedData = updateRecursive(data)
+        // Add the child as a top-level row
+        const newData = [...updatedData, { ...childRow, parentId: null }]
 
         setData(newData)
         updateParent(newData)
@@ -523,23 +599,140 @@ export function GenericExpenseTable({ data: initialData, onDataChange, onSave, i
             },
         },
         {
+            accessorKey: "supplier",
+            header: () => {
+                // Get unique suppliers for filter dropdown
+                const allSuppliers = flattenExpenses(data)
+                    .map(r => r.supplier || '')
+                    .filter(s => s.trim() !== '')
+                const uniqueSuppliers = Array.from(new Set(allSuppliers)).sort()
+
+                const handleSelectSupplier = (value: string) => {
+                    setSupplierFilter(value)
+                    setIsSupplierFilterOpen(false)  // Auto-close popover
+                }
+
+                return (
+                    <Popover open={isSupplierFilterOpen} onOpenChange={setIsSupplierFilterOpen}>
+                        <PopoverTrigger asChild>
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                className={cn(
+                                    "h-8 px-2 -ml-2 font-medium",
+                                    supplierFilter && "text-blue-600 bg-blue-100 hover:bg-blue-200 border border-blue-300"
+                                )}
+                            >
+                                对接商
+                                {supplierFilter ? (
+                                    <span className="ml-1 px-1.5 py-0.5 text-[10px] bg-blue-600 text-white rounded">{supplierFilter}</span>
+                                ) : (
+                                    <Filter className="ml-1 h-3 w-3" />
+                                )}
+                            </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-[220px] p-2" align="start">
+                            <div className="space-y-2">
+                                <div className="max-h-[250px] overflow-y-auto space-y-0.5">
+                                    <button
+                                        onClick={() => handleSelectSupplier('')}
+                                        className={cn(
+                                            "w-full text-left px-3 py-2 text-sm rounded-md flex items-center justify-between transition-colors",
+                                            !supplierFilter
+                                                ? "bg-blue-100 text-blue-700 font-medium border border-blue-300"
+                                                : "hover:bg-gray-100"
+                                        )}
+                                    >
+                                        全部
+                                        {!supplierFilter && <span className="text-blue-600 font-bold">✓</span>}
+                                    </button>
+                                    {uniqueSuppliers.map(supplier => (
+                                        <button
+                                            key={supplier}
+                                            onClick={() => handleSelectSupplier(supplier)}
+                                            className={cn(
+                                                "w-full text-left px-3 py-2 text-sm rounded-md flex items-center justify-between transition-colors",
+                                                supplierFilter === supplier
+                                                    ? "bg-blue-100 text-blue-700 font-medium border border-blue-300"
+                                                    : "hover:bg-gray-100"
+                                            )}
+                                        >
+                                            <span className="truncate">{supplier}</span>
+                                            {supplierFilter === supplier && <span className="text-blue-600 font-bold flex-shrink-0 ml-2">✓</span>}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        </PopoverContent>
+                    </Popover>
+                )
+            },
+            cell: ({ row }) => {
+                if (row.original.isGroup) return null
+                return (
+                    <EditableCell
+                        value={row.getValue("supplier") || ""}
+                        onCommit={(value) => updateData(row.original.id, "supplier", value)}
+                    />
+                )
+            },
+        },
+        {
             accessorKey: "person",
             header: "负责人",
             cell: ({ row }) => {
-                if (row.original.isGroup) return (
-                    <div className="flex items-end justify-end w-full">
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleUngroup(row.original)}
-                            className="h-6 px-2 text-xs text-red-500 hover:text-red-700 hover:bg-red-50"
-                            title="Ungroup"
-                        >
-                            <Minimize2 className="h-3 w-3 mr-1" />
-                            Ungroup
-                        </Button>
-                    </div>
-                )
+                // Group row - show Ungroup button and Add Here button (in group mode)
+                if (row.original.isGroup) {
+                    return (
+                        <div className="flex items-center justify-end gap-2 w-full">
+                            {isGroupMode && selectedForGroup.size > 0 && (
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleAddToGroup(row.original.id)}
+                                    className="h-6 px-2 text-xs text-blue-600 hover:text-blue-800 hover:bg-blue-50 border-blue-200"
+                                    title="Add selected rows to this group"
+                                >
+                                    <Plus className="h-3 w-3 mr-1" />
+                                    添加到此组
+                                </Button>
+                            )}
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleUngroup(row.original)}
+                                className="h-6 px-2 text-xs text-red-500 hover:text-red-700 hover:bg-red-50"
+                                title="Ungroup"
+                            >
+                                <Minimize2 className="h-3 w-3 mr-1" />
+                                Ungroup
+                            </Button>
+                        </div>
+                    )
+                }
+
+                // Child row (depth > 0) - show Remove from Group button in group mode
+                if (row.depth > 0 && isGroupMode && row.original.parentId) {
+                    return (
+                        <div className="flex items-center justify-end gap-2 w-full">
+                            <EditableCell
+                                value={row.getValue("person")}
+                                onCommit={(value) => updateData(row.original.id, "person", value)}
+                            />
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleRemoveFromGroup(row.original.id, row.original.parentId!)}
+                                className="h-6 px-2 text-xs text-orange-500 hover:text-orange-700 hover:bg-orange-50"
+                                title="Remove from group"
+                            >
+                                <Minimize2 className="h-3 w-3 mr-1" />
+                                移出分组
+                            </Button>
+                        </div>
+                    )
+                }
+
                 return (
                     <EditableCell
                         value={row.getValue("person")}
@@ -548,7 +741,7 @@ export function GenericExpenseTable({ data: initialData, onDataChange, onSave, i
                 )
             },
         },
-    ] as ColumnDef<ExpenseRecord>[], [data, isDeleteMode, pendingDeletions, isGroupMode, selectedForGroup])
+    ] as ColumnDef<ExpenseRecord>[], [data, isDeleteMode, pendingDeletions, isGroupMode, selectedForGroup, supplierFilter, isSupplierFilterOpen])
 
     const addRow = () => {
         const newRecord: ExpenseRecord = {
@@ -557,7 +750,7 @@ export function GenericExpenseTable({ data: initialData, onDataChange, onSave, i
             item: "",
             amountRMB: 0,
             amountUSD: 0,
-
+            supplier: "",
             person: "",
             isNew: true,
         }
@@ -848,11 +1041,12 @@ export function GenericExpenseTable({ data: initialData, onDataChange, onSave, i
                                 {headerGroup.headers.map((header) => {
                                     let widthClass = "w-auto"
                                     switch (header.column.id) {
-                                        case 'date': widthClass = "w-[15%]"; break;
-                                        case 'item': widthClass = "w-[40%]"; break;
-                                        case 'amountRMB': widthClass = "w-[15%]"; break;
-                                        case 'amountUSD': widthClass = "w-[15%]"; break;
-                                        case 'person': widthClass = "w-[15%]"; break;
+                                        case 'date': widthClass = "w-[12%]"; break;
+                                        case 'item': widthClass = "w-[28%]"; break;
+                                        case 'amountRMB': widthClass = "w-[12%]"; break;
+                                        case 'amountUSD': widthClass = "w-[12%]"; break;
+                                        case 'supplier': widthClass = "w-[12%]"; break;
+                                        case 'person': widthClass = "w-[12%]"; break;
                                         case 'delete': widthClass = "w-[50px]"; break;
                                     }
                                     return (
@@ -876,17 +1070,22 @@ export function GenericExpenseTable({ data: initialData, onDataChange, onSave, i
                                     key={row.id}
                                     data-state={row.getIsSelected() && "selected"}
                                     className={cn(
-                                        pendingDeletions.has(row.original.id) && "bg-destructive/10 hover:bg-destructive/20"
+                                        pendingDeletions.has(row.original.id) && "bg-destructive/10 hover:bg-destructive/20",
+                                        // Add background for expanded group rows
+                                        row.getIsExpanded() && (row.original.isGroup || (row.original.children && row.original.children.length > 0)) && "bg-blue-100 hover:bg-blue-200/80",
+                                        // Add lighter background for child rows (depth > 0 means it's a child)
+                                        row.depth > 0 && "bg-blue-50 hover:bg-blue-100/60"
                                     )}
                                 >
                                     {row.getVisibleCells().map((cell) => {
                                         let widthClass = "w-auto"
                                         switch (cell.column.id) {
-                                            case 'date': widthClass = "w-[15%]"; break;
-                                            case 'item': widthClass = "w-[40%]"; break;
-                                            case 'amountRMB': widthClass = "w-[15%]"; break;
-                                            case 'amountUSD': widthClass = "w-[15%]"; break;
-                                            case 'person': widthClass = "w-[15%]"; break;
+                                            case 'date': widthClass = "w-[12%]"; break;
+                                            case 'item': widthClass = "w-[28%]"; break;
+                                            case 'amountRMB': widthClass = "w-[12%]"; break;
+                                            case 'amountUSD': widthClass = "w-[12%]"; break;
+                                            case 'supplier': widthClass = "w-[12%]"; break;
+                                            case 'person': widthClass = "w-[12%]"; break;
                                             case 'delete': widthClass = "w-[50px]"; break;
                                         }
                                         return (

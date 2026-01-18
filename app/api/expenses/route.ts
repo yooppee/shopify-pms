@@ -53,6 +53,7 @@ export async function GET(request: NextRequest) {
             amountRMB: Number(row.amount_rmb),
             amountUSD: Number(row.amount_usd),
             person: row.person,
+            supplier: row.supplier || "",
             parentId: row.parent_id,
             isGroup: row.is_group,
 
@@ -96,6 +97,7 @@ export async function POST(request: NextRequest) {
                     amount_rmb: r.amountRMB,
                     amount_usd: r.amountUSD,
                     person: r.person,
+                    supplier: r.supplier || "",
                     type: type,
                     parent_id: parentId,
 
