@@ -176,7 +176,7 @@ export function ExpensesContent() {
         return roots
     }
 
-    const handleSave = async (type: 'procurement' | 'logistics' | 'operating' | 'settled', currentData: ExpenseRecord[], originalData: ExpenseRecord[]) => {
+    const handleSave = async (type: 'procurement' | 'logistics' | 'operating' | 'settled', currentData: ExpenseRecord[]) => {
         setIsSaving(true)
         try {
             const response = await fetch('/api/expenses', {
@@ -209,23 +209,19 @@ export function ExpensesContent() {
         const idsSet = new Set(selectedIds)
         let sourceData: ExpenseRecord[] = []
         let setSourceData: (data: ExpenseRecord[]) => void = () => { }
-        let originalSourceData: ExpenseRecord[] = []
         let sourceApiType: 'procurement' | 'logistics' | 'operating' = 'procurement'
 
         if (sourceType === 'procurement') {
             sourceData = procurementData
             setSourceData = setProcurementData
-            originalSourceData = originalProcurementData
             sourceApiType = 'procurement'
         } else if (sourceType === 'logistics') {
             sourceData = logisticsData
             setSourceData = setLogisticsData
-            originalSourceData = originalLogisticsData
             sourceApiType = 'logistics'
         } else if (sourceType === 'operational') {
             sourceData = operatingData
             setSourceData = setOperatingData
-            originalSourceData = originalOperatingData
             sourceApiType = 'operating'
         } else {
             return
@@ -233,8 +229,8 @@ export function ExpensesContent() {
 
         // Helper to extract and remove nodes
         const extractAndRemove = (nodes: ExpenseRecord[]): { kept: ExpenseRecord[], removed: ExpenseRecord[] } => {
-            let keptNodes: ExpenseRecord[] = []
-            let removedNodes: ExpenseRecord[] = []
+            const keptNodes: ExpenseRecord[] = []
+            const removedNodes: ExpenseRecord[] = []
 
             for (const node of nodes) {
                 if (idsSet.has(node.id)) {
@@ -243,7 +239,7 @@ export function ExpensesContent() {
                     if (node.children) {
                         const { kept, removed } = extractAndRemove(node.children)
                         if (removed.length > 0) {
-                            removedNodes = [...removedNodes, ...removed]
+                            removedNodes.push(...removed)
                         }
                         keptNodes.push({ ...node, children: kept })
                     } else {
@@ -366,7 +362,7 @@ export function ExpensesContent() {
                         <ProcurementCostTable
                             data={procurementData}
                             onDataChange={setProcurementData}
-                            onSave={() => handleSave('procurement', procurementData, originalProcurementData)}
+                            onSave={() => handleSave('procurement', procurementData)}
                             isSaving={isSaving}
                             unsavedCount={procurementChanges}
                             onDiscard={() => setProcurementData(structuredClone(originalProcurementData))}
@@ -378,7 +374,7 @@ export function ExpensesContent() {
                         <LogisticsCostTable
                             data={logisticsData}
                             onDataChange={setLogisticsData}
-                            onSave={() => handleSave('logistics', logisticsData, originalLogisticsData)}
+                            onSave={() => handleSave('logistics', logisticsData)}
                             isSaving={isSaving}
                             unsavedCount={logisticsChanges}
                             onDiscard={() => setLogisticsData(structuredClone(originalLogisticsData))}
@@ -390,7 +386,7 @@ export function ExpensesContent() {
                         <OperatingCostTable
                             data={operatingData}
                             onDataChange={setOperatingData}
-                            onSave={() => handleSave('operating', operatingData, originalOperatingData)}
+                            onSave={() => handleSave('operating', operatingData)}
                             isSaving={isSaving}
                             unsavedCount={operatingChanges}
                             onDiscard={() => setOperatingData(structuredClone(originalOperatingData))}
@@ -402,7 +398,7 @@ export function ExpensesContent() {
                         <SettledCostTable
                             data={settledData}
                             onDataChange={setSettledData}
-                            onSave={() => handleSave('settled', settledData, originalSettledData)}
+                            onSave={() => handleSave('settled', settledData)}
                             isSaving={isSaving}
                             unsavedCount={settledChanges}
                             onDiscard={() => setSettledData(structuredClone(originalSettledData))}

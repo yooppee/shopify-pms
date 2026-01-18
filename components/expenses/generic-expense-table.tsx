@@ -12,11 +12,11 @@ import {
     ExpandedState,
     getExpandedRowModel,
 } from "@tanstack/react-table"
-import { Trash2, Plus, Search as SearchIcon, Calendar as CalendarIcon, Save, Loader2, Filter, RotateCcw, Layers, ChevronRight, ChevronDown, FolderOpen, Folder, Minimize2, Check } from "lucide-react"
+import { Trash2, Plus, Search as SearchIcon, Calendar as CalendarIcon, Save, Loader2, Filter, Layers, ChevronRight, ChevronDown, Folder, Minimize2, Check } from "lucide-react"
 import { format, subDays, isWithinInterval } from "date-fns"
 import { DateRange } from "react-day-picker"
 
-import { cn, formatNumber, formatCurrency } from "@/lib/utils"
+import { cn, formatNumber } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Calendar } from "@/components/ui/calendar"
 import { Checkbox } from "@/components/ui/checkbox"
