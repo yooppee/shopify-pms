@@ -56,25 +56,43 @@ export async function POST(request: NextRequest) {
         }
 
         // 3. Prepare Data for Database
-        const ordersToUpsert = orders.map(order => ({
-            shopify_order_id: order.id,
-            order_number: order.name,
-            email: order.email,
-            financial_status: order.financial_status,
-            fulfillment_status: order.fulfillment_status,
-            total_price: parseFloat(order.total_price),
-            subtotal_price: parseFloat(order.subtotal_price),
-            total_tax: parseFloat(order.total_tax),
-            total_discounts: parseFloat(order.total_discounts),
-            shipping_cost: parseFloat(order.total_shipping_price_set?.shop_money?.amount || '0'),
-            currency: order.currency,
-            customer_name: order.customer ? `${order.customer.first_name || ''} ${order.customer.last_name || ''}`.trim() : null,
-            shipping_address: order.shipping_address || null, // JSONB
-            processed_at: order.processed_at,
-            created_at: order.created_at, // Map generic created_at
-            updated_at: order.updated_at  // Map generic updated_at
-            // created_at / updated_at handled by DB defaults
-        }))
+        const ordersToUpsert = orders.map(order => {
+            // Calculate shipping refund from order adjustments
+            let shippingRefund = 0
+            if (order.refunds && order.refunds.length > 0) {
+                for (const refund of order.refunds) {
+                    if (refund.order_adjustments) {
+                        for (const adj of refund.order_adjustments) {
+                            if (adj.kind === 'shipping_refund') {
+                                // amount is negative for refunds, so we use Math.abs
+                                shippingRefund += Math.abs(parseFloat(adj.amount || '0'))
+                            }
+                        }
+                    }
+                }
+            }
+
+            return {
+                shopify_order_id: order.id,
+                order_number: order.name,
+                email: order.email,
+                financial_status: order.financial_status,
+                fulfillment_status: order.fulfillment_status,
+                total_price: parseFloat(order.total_price),
+                subtotal_price: parseFloat(order.subtotal_price),
+                total_tax: parseFloat(order.total_tax),
+                total_discounts: parseFloat(order.total_discounts),
+                shipping_cost: parseFloat(order.total_shipping_price_set?.shop_money?.amount || '0'),
+                shipping_refund: shippingRefund,
+                currency: order.currency,
+                customer_name: order.customer ? `${order.customer.first_name || ''} ${order.customer.last_name || ''}`.trim() : null,
+                shipping_address: order.shipping_address || null, // JSONB
+                processed_at: order.processed_at,
+                created_at: order.created_at, // Map generic created_at
+                updated_at: order.updated_at  // Map generic updated_at
+                // created_at / updated_at handled by DB defaults
+            }
+        })
 
         // 4. Save Orders
         const { error: orderError } = await supabase
@@ -113,7 +131,22 @@ export async function POST(request: NextRequest) {
             const internalOrderId = orderIdMap.get(order.id)
             if (!internalOrderId) continue
 
+            // Calculate refunds per line item from the order's refunds array
+            const refundsByLineItem = new Map<number, { quantity: number; amount: number }>()
+            if (order.refunds && order.refunds.length > 0) {
+                for (const refund of order.refunds) {
+                    for (const refundItem of refund.refund_line_items || []) {
+                        const existing = refundsByLineItem.get(refundItem.line_item_id) || { quantity: 0, amount: 0 }
+                        refundsByLineItem.set(refundItem.line_item_id, {
+                            quantity: existing.quantity + refundItem.quantity,
+                            amount: existing.amount + parseFloat(refundItem.subtotal || '0')
+                        })
+                    }
+                }
+            }
+
             for (const item of order.line_items) {
+                const refundData = refundsByLineItem.get(item.id) || { quantity: 0, amount: 0 }
                 lineItemsToUpsert.push({
                     order_id: internalOrderId,
                     shopify_line_item_id: item.id,
@@ -124,7 +157,9 @@ export async function POST(request: NextRequest) {
                     sku: item.sku,
                     quantity: item.quantity,
                     price: parseFloat(item.price),
-                    total_discount: parseFloat(item.total_discount)
+                    total_discount: parseFloat(item.total_discount),
+                    refunded_quantity: refundData.quantity,
+                    refund_amount: refundData.amount
                 })
             }
         }

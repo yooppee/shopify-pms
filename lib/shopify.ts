@@ -61,6 +61,28 @@ export interface ShopifyLineItem {
     total_discount: string
 }
 
+export interface ShopifyRefundLineItem {
+    id: number
+    line_item_id: number       // Maps back to ShopifyLineItem.id
+    quantity: number           // Quantity refunded
+    subtotal: string           // Refund amount for this item
+    total_tax: string
+}
+
+export interface ShopifyOrderAdjustment {
+    id: number
+    kind: string              // 'shipping_refund', 'refund_discrepancy', etc.
+    amount: string            // Refund amount (negative for refunds)
+    reason: string
+}
+
+export interface ShopifyRefund {
+    id: number
+    created_at: string
+    refund_line_items: ShopifyRefundLineItem[]
+    order_adjustments?: ShopifyOrderAdjustment[]  // Includes shipping refunds
+}
+
 export interface ShopifyOrder {
     id: number
     name: string // Order number e.g. #1001
@@ -82,6 +104,7 @@ export interface ShopifyOrder {
     created_at: string
     updated_at: string
     line_items: ShopifyLineItem[]
+    refunds?: ShopifyRefund[]  // Refund data from Shopify
     customer?: {
         first_name: string
         last_name: string

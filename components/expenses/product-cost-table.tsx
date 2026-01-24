@@ -41,6 +41,8 @@ interface OrderLineItem {
     image_url?: string
     cost: number | null
     is_manual_cost: boolean
+    refunded_quantity: number
+    refund_amount: number
 }
 
 interface Order {
@@ -53,6 +55,7 @@ interface Order {
     total_tax: number
     total_discounts: number
     shipping_cost: number | null
+    shipping_refund: number
     financial_status: string
     fulfillment_status: string
     order_line_items: OrderLineItem[]
@@ -270,21 +273,28 @@ export function ProductCostTable() {
         // 3. Calculate value
         const total = filteredOrders.reduce((sum: number, order: Order) => {
             let val = 0
+            // Calculate line item refunds for this order
+            const lineItemRefund = order.order_line_items?.reduce((refundSum: number, item: OrderLineItem) =>
+                refundSum + (item.refund_amount || 0), 0) || 0
+            // Shipping refund
+            const shippingRefund = order.shipping_refund || 0
+
             switch (statsColumn) {
-                case 'total_price': val = Number(order.total_price); break;
-                case 'subtotal_price': val = Number(order.subtotal_price); break;
+                case 'total_price': val = Number(order.total_price) - lineItemRefund - shippingRefund; break;
+                case 'subtotal_price': val = Number(order.subtotal_price) - lineItemRefund; break;
                 case 'total_discounts': val = Math.abs(Number(order.total_discounts)); break;
                 case 'shipping_cost':
-                    val = order.shipping_cost ?? (
+                    const baseShipping = order.shipping_cost ?? (
                         (Number(order.total_price) || 0)
                         - (Number(order.subtotal_price) || 0)
                         - (Number(order.total_tax) || 0)
                         + (Number(order.total_discounts) || 0)
                     );
+                    val = baseShipping - (order.shipping_refund || 0);
                     break;
                 case 'total_cost': val = Number(order.total_cost); break;
                 case 'profit':
-                    const revenue = Number(order.total_price) - (Number(order.total_tax) || 0) - (Number(order.shipping_cost) || 0)
+                    const revenue = (Number(order.total_price) - lineItemRefund - shippingRefund) - (Number(order.total_tax) || 0) - (Number(order.shipping_cost) || 0)
                     const cost = Number(order.total_cost)
                     val = revenue - cost
                     break;
@@ -688,9 +698,16 @@ export function ProductCostTable() {
                                                                 <Package className="h-8 w-8 p-1.5 text-muted-foreground bg-muted/50 rounded flex-shrink-0" />
                                                             )}
                                                             <div className="flex flex-col min-w-0 overflow-hidden">
-                                                                <span className="truncate text-sm font-medium" title={firstItem?.title}>{firstItem?.title || 'No Item'}</span>
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className={`truncate text-sm font-medium ${(firstItem?.refunded_quantity || 0) > 0 ? 'line-through text-muted-foreground' : ''}`} title={firstItem?.title}>{firstItem?.title || 'No Item'}</span>
+                                                                    {(firstItem?.refunded_quantity || 0) > 0 && (
+                                                                        <span className="text-xs bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded flex-shrink-0">
+                                                                            已退款{firstItem.refunded_quantity >= firstItem.quantity ? '' : ` x${firstItem.refunded_quantity}`}
+                                                                        </span>
+                                                                    )}
+                                                                </div>
                                                                 {firstItem?.variant_title && firstItem?.variant_title !== 'Default Title' && (
-                                                                    <span className="text-xs text-muted-foreground truncate" title={firstItem?.variant_title}>
+                                                                    <span className={`text-xs text-muted-foreground truncate ${(firstItem?.refunded_quantity || 0) > 0 ? 'line-through' : ''}`} title={firstItem?.variant_title}>
                                                                         {firstItem.variant_title}
                                                                     </span>
                                                                 )}
@@ -700,11 +717,50 @@ export function ProductCostTable() {
                                                 </div>
                                             </TableCell>
                                             <TableCell className="overflow-hidden"><span className="block truncate" title={order.customer_name || 'Guest'}>{order.customer_name || 'Guest'}</span></TableCell>
-                                            <TableCell>{formatCurrency(order.total_price)}</TableCell>
-                                            <TableCell>{formatCurrency(order.subtotal_price)}</TableCell>
+                                            <TableCell>
+                                                {(() => {
+                                                    const lineItemRefund = order.order_line_items?.reduce((sum: number, item: OrderLineItem) => sum + (item.refund_amount || 0), 0) || 0
+                                                    const shippingRefund = order.shipping_refund || 0
+                                                    const totalRefund = lineItemRefund + shippingRefund
+                                                    if (totalRefund > 0) {
+                                                        return (
+                                                            <div className="flex flex-col">
+                                                                <span className="line-through text-muted-foreground text-xs">{formatCurrency(order.total_price)}</span>
+                                                                <span className="text-orange-600 font-medium">{formatCurrency(order.total_price - totalRefund)}</span>
+                                                            </div>
+                                                        )
+                                                    }
+                                                    return formatCurrency(order.total_price)
+                                                })()}
+                                            </TableCell>
+                                            <TableCell>
+                                                {(() => {
+                                                    const totalRefund = order.order_line_items?.reduce((sum: number, item: OrderLineItem) => sum + (item.refund_amount || 0), 0) || 0
+                                                    if (totalRefund > 0) {
+                                                        return (
+                                                            <div className="flex flex-col">
+                                                                <span className="line-through text-muted-foreground text-xs">{formatCurrency(order.subtotal_price)}</span>
+                                                                <span className="text-orange-600 font-medium">{formatCurrency(order.subtotal_price - totalRefund)}</span>
+                                                            </div>
+                                                        )
+                                                    }
+                                                    return formatCurrency(order.subtotal_price)
+                                                })()}
+                                            </TableCell>
                                             <TableCell className="text-red-500">{formatCurrency(-Math.abs(order.total_discounts))}</TableCell>
                                             <TableCell className="text-muted-foreground">
-                                                {shippingCost > 0 ? formatCurrency(shippingCost) : '-'}
+                                                {(() => {
+                                                    const shippingRefund = order.shipping_refund || 0
+                                                    if (shippingRefund > 0 && shippingCost > 0) {
+                                                        return (
+                                                            <div className="flex flex-col">
+                                                                <span className="line-through text-muted-foreground text-xs">{formatCurrency(shippingCost)}</span>
+                                                                <span className="text-orange-600 font-medium">{formatCurrency(shippingCost - shippingRefund)}</span>
+                                                            </div>
+                                                        )
+                                                    }
+                                                    return shippingCost > 0 ? formatCurrency(shippingCost) : '-'
+                                                })()}
                                             </TableCell>
                                             <TableCell>
                                                 <Badge
@@ -742,7 +798,7 @@ export function ProductCostTable() {
                                         {isExpanded && hasMultipleItems && (
                                             <>
                                                 {order.order_line_items.map((item, idx) => (
-                                                    <TableRow key={item.id || idx} className="bg-muted/30 hover:bg-muted/30 border-b-0">
+                                                    <TableRow key={item.id || idx} className={`border-b-0 ${Number(order.total_price) === 0 ? 'bg-pink-50 hover:bg-pink-100' : 'bg-muted/30 hover:bg-muted/30'}`}>
                                                         <TableCell colSpan={2}></TableCell>
                                                         <TableCell colSpan={3}>
                                                             <div className="flex items-center gap-2 pl-2">
@@ -760,9 +816,16 @@ export function ProductCostTable() {
                                                                     <Package className="h-10 w-10 p-2 text-muted-foreground bg-muted/50 rounded flex-shrink-0" />
                                                                 )}
                                                                 <div className="flex flex-col min-w-0 overflow-hidden">
-                                                                    <span className="text-sm font-medium truncate" title={item.title}>{item.title}</span>
+                                                                    <div className="flex items-center gap-2">
+                                                                        <span className={`text-sm font-medium truncate ${(item.refunded_quantity || 0) > 0 ? 'line-through text-muted-foreground' : ''}`} title={item.title}>{item.title}</span>
+                                                                        {(item.refunded_quantity || 0) > 0 && (
+                                                                            <span className="text-xs bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded flex-shrink-0">
+                                                                                已退款{item.refunded_quantity >= item.quantity ? '' : ` x${item.refunded_quantity}`}
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
                                                                     {item.variant_title && item.variant_title !== 'Default Title' && (
-                                                                        <span className="text-xs text-muted-foreground bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md mt-1 w-fit border border-slate-200 dark:border-slate-700 truncate max-w-full">
+                                                                        <span className={`text-xs text-muted-foreground bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md mt-1 w-fit border border-slate-200 dark:border-slate-700 truncate max-w-full ${(item.refunded_quantity || 0) > 0 ? 'line-through' : ''}`}>
                                                                             {item.variant_title}
                                                                         </span>
                                                                     )}
@@ -771,7 +834,14 @@ export function ProductCostTable() {
                                                             </div>
                                                         </TableCell>
                                                         <TableCell>
-                                                            {formatCurrency(item.price * item.quantity)}
+                                                            {(item.refunded_quantity || 0) > 0 ? (
+                                                                <div className="flex flex-col">
+                                                                    <span className="line-through text-muted-foreground text-xs">{formatCurrency(item.price * item.quantity)}</span>
+                                                                    <span className="text-orange-600 font-medium">{formatCurrency(item.price * (item.quantity - (item.refunded_quantity || 0)))}</span>
+                                                                </div>
+                                                            ) : (
+                                                                formatCurrency(item.price * item.quantity)
+                                                            )}
                                                         </TableCell>
                                                         <TableCell colSpan={4}></TableCell>
                                                         <TableCell className="bg-amber-50/50 border-l-2 border-l-amber-300">
