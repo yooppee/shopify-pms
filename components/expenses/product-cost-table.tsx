@@ -12,8 +12,9 @@ import {
 } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { formatCurrency } from '@/lib/utils'
-import { ChevronDown, ChevronRight, AlertCircle, Loader2, Package, Pencil, Check, X, Search, Calendar as CalendarIcon, Filter, RotateCcw, ShoppingBag } from 'lucide-react'
+import { Link as LinkIcon, ChevronDown, ChevronRight, AlertCircle, Loader2, Package, Pencil, Check, X, Search, Calendar as CalendarIcon, Filter, RotateCcw, ShoppingBag } from 'lucide-react'
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { SkuMappingDialog } from './sku-mapping-dialog'
 import { format, subDays, isWithinInterval } from 'date-fns'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -43,6 +44,8 @@ interface OrderLineItem {
     is_manual_cost: boolean
     refunded_quantity: number
     refund_amount: number
+    effective_variant_id?: number
+    is_mapped?: boolean
 }
 
 interface Order {
@@ -155,6 +158,10 @@ export function ProductCostTable() {
     const [searchTerm, setSearchTerm] = useState('')
     const [lastOrderSyncTime, setLastOrderSyncTime] = useState<string | null>(null)
 
+    // Filter State
+    const [showUnmatchedOnly, setShowUnmatchedOnly] = useState(false)
+    const [mappingDialog, setMappingDialog] = useState<{ open: boolean; inputSku: string }>({ open: false, inputSku: '' })
+
     // Load last order sync time from localStorage
     useEffect(() => {
         const saved = localStorage.getItem('lastOrderSyncTime')
@@ -227,8 +234,17 @@ export function ProductCostTable() {
                 return date >= statsDateRange.from!
             })
         }
+
+        // 3. Unmatched Filter
+        if (showUnmatchedOnly) {
+            data = data.filter((order: Order) =>
+                order.order_line_items.some((item: OrderLineItem) =>
+                    !item.image_url && item.sku // Unmatched = No image but has SKU
+                )
+            )
+        }
         return data
-    }, [orders, searchTerm, statsDateRange])
+    }, [orders, searchTerm, statsDateRange, showUnmatchedOnly])
 
     // Calculate statistics
     const statsValue = useMemo(() => {
@@ -431,7 +447,25 @@ export function ProductCostTable() {
                         onChange={(e) => setSearchTerm(e.target.value)}
                         className="max-w-sm"
                     />
+                    <Button
+                        variant={showUnmatchedOnly ? "secondary" : "outline"}
+                        size="sm"
+                        onClick={() => setShowUnmatchedOnly(!showUnmatchedOnly)}
+                        className={showUnmatchedOnly ? "bg-orange-100 text-orange-700 hover:bg-orange-200 border-orange-200" : ""}
+                    >
+                        <Filter className="mr-2 h-4 w-4" />
+                        {showUnmatchedOnly ? "Show All" : "Unmatched Only"}
+                    </Button>
                 </div>
+
+                <SkuMappingDialog
+                    open={mappingDialog.open}
+                    onOpenChange={(open) => setMappingDialog(prev => ({ ...prev, open }))}
+                    inputSku={mappingDialog.inputSku}
+                    onSuccess={() => {
+                        // Optional: trigger anything else if needed
+                    }}
+                />
 
                 {/* Statistics Dashboard */}
                 <div className="flex justify-center">
@@ -693,9 +727,37 @@ export function ProductCostTable() {
                                                                         className="object-cover"
                                                                         sizes="32px"
                                                                     />
+                                                                    {/* Allow re-linking if needed */}
+                                                                    <div
+                                                                        className="absolute inset-0 bg-black/50 opacity-0 group-hover/img:opacity-100 flex items-center justify-center cursor-pointer transition-opacity"
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation()
+                                                                            if (firstItem.sku) {
+                                                                                setMappingDialog({ open: true, inputSku: firstItem.sku })
+                                                                            }
+                                                                        }}
+                                                                        title="Change mapped product"
+                                                                    >
+                                                                        <LinkIcon className="h-3 w-3 text-white" />
+                                                                    </div>
                                                                 </div>
                                                             ) : (
-                                                                <Package className="h-8 w-8 p-1.5 text-muted-foreground bg-muted/50 rounded flex-shrink-0" />
+                                                                firstItem.sku ? (
+                                                                    <Button
+                                                                        variant="ghost"
+                                                                        size="sm"
+                                                                        className="h-8 w-8 p-0 border-dashed border-2 text-muted-foreground hover:text-primary hover:border-primary hover:bg-primary/5 rounded bg-muted/30"
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation()
+                                                                            setMappingDialog({ open: true, inputSku: firstItem.sku })
+                                                                        }}
+                                                                        title={`Link SKU: ${firstItem.sku}`}
+                                                                    >
+                                                                        <LinkIcon className="h-4 w-4" />
+                                                                    </Button>
+                                                                ) : (
+                                                                    <Package className="h-8 w-8 p-1.5 text-muted-foreground bg-muted/50 rounded flex-shrink-0" />
+                                                                )
                                                             )}
                                                             <div className="flex flex-col min-w-0 overflow-hidden">
                                                                 <div className="flex items-center gap-2">
@@ -703,6 +765,20 @@ export function ProductCostTable() {
                                                                     {(firstItem?.refunded_quantity || 0) > 0 && (
                                                                         <span className="text-xs bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded flex-shrink-0">
                                                                             已退款{firstItem.refunded_quantity >= firstItem.quantity ? '' : ` x${firstItem.refunded_quantity}`}
+                                                                        </span>
+                                                                    )}
+                                                                    {firstItem.is_mapped && (
+                                                                        <span
+                                                                            className="text-[10px] bg-blue-50 text-blue-600 px-1 py-0.5 rounded border border-blue-100 flex items-center gap-0.5 cursor-pointer hover:bg-blue-100 transition-colors"
+                                                                            title="Mapped via SKU alias (Click to change)"
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation()
+                                                                                if (firstItem.sku) {
+                                                                                    setMappingDialog({ open: true, inputSku: firstItem.sku })
+                                                                                }
+                                                                            }}
+                                                                        >
+                                                                            <LinkIcon className="h-2 w-2" /> Mapped
                                                                         </span>
                                                                     )}
                                                                 </div>
@@ -803,7 +879,7 @@ export function ProductCostTable() {
                                                         <TableCell colSpan={3}>
                                                             <div className="flex items-center gap-2 pl-2">
                                                                 {item.image_url ? (
-                                                                    <div className="relative h-10 w-10 rounded overflow-hidden border flex-shrink-0">
+                                                                    <div className="relative h-10 w-10 rounded overflow-hidden border flex-shrink-0 group/img">
                                                                         <Image
                                                                             src={item.image_url}
                                                                             alt={item.title}
@@ -811,9 +887,37 @@ export function ProductCostTable() {
                                                                             className="object-cover"
                                                                             sizes="40px"
                                                                         />
+                                                                        {/* Allow re-linking if needed */}
+                                                                        <div
+                                                                            className="absolute inset-0 bg-black/50 opacity-0 group-hover/img:opacity-100 flex items-center justify-center cursor-pointer transition-opacity"
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation()
+                                                                                if (item.sku) {
+                                                                                    setMappingDialog({ open: true, inputSku: item.sku })
+                                                                                }
+                                                                            }}
+                                                                            title="Change mapped product"
+                                                                        >
+                                                                            <LinkIcon className="h-3 w-3 text-white" />
+                                                                        </div>
                                                                     </div>
                                                                 ) : (
-                                                                    <Package className="h-10 w-10 p-2 text-muted-foreground bg-muted/50 rounded flex-shrink-0" />
+                                                                    item.sku ? (
+                                                                        <Button
+                                                                            variant="ghost"
+                                                                            size="sm"
+                                                                            className="h-10 w-10 p-0 border-dashed border-2 text-muted-foreground hover:text-primary hover:border-primary hover:bg-primary/5 rounded bg-muted/30"
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation()
+                                                                                setMappingDialog({ open: true, inputSku: item.sku })
+                                                                            }}
+                                                                            title={`Link SKU: ${item.sku}`}
+                                                                        >
+                                                                            <LinkIcon className="h-4 w-4" />
+                                                                        </Button>
+                                                                    ) : (
+                                                                        <Package className="h-10 w-10 p-2 text-muted-foreground bg-muted/50 rounded flex-shrink-0" />
+                                                                    )
                                                                 )}
                                                                 <div className="flex flex-col min-w-0 overflow-hidden">
                                                                     <div className="flex items-center gap-2">
@@ -821,6 +925,20 @@ export function ProductCostTable() {
                                                                         {(item.refunded_quantity || 0) > 0 && (
                                                                             <span className="text-xs bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded flex-shrink-0">
                                                                                 已退款{item.refunded_quantity >= item.quantity ? '' : ` x${item.refunded_quantity}`}
+                                                                            </span>
+                                                                        )}
+                                                                        {item.is_mapped && (
+                                                                            <span
+                                                                                className="text-[10px] bg-blue-50 text-blue-600 px-1 py-0.5 rounded border border-blue-100 flex items-center gap-0.5 cursor-pointer hover:bg-blue-100 transition-colors"
+                                                                                title="Mapped via SKU alias (Click to change)"
+                                                                                onClick={(e) => {
+                                                                                    e.stopPropagation()
+                                                                                    if (item.sku) {
+                                                                                        setMappingDialog({ open: true, inputSku: item.sku })
+                                                                                    }
+                                                                                }}
+                                                                            >
+                                                                                <LinkIcon className="h-2 w-2" /> Mapped
                                                                             </span>
                                                                         )}
                                                                     </div>

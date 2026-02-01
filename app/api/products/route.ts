@@ -54,21 +54,42 @@ export async function GET(request: NextRequest) {
         // Initialize order count map for general product management
         const dateRangeOrderCounts: Record<number, number> = {}
         if (startDate && endDate) {
+            // 1. Fetch SKU Mappings
+            const { data: mappings } = await supabase
+                .from('sku_mappings')
+                .select('input_sku, target_variant_id')
+
+            const skuMappingMap = new Map<string, number>()
+            if (mappings) {
+                mappings.forEach((m: any) => {
+                    if (m.input_sku && m.target_variant_id) {
+                        skuMappingMap.set(m.input_sku, Number(m.target_variant_id))
+                    }
+                })
+            }
+
             const { data: lineItems, error: orderError } = await supabase
                 .from('order_line_items')
-                .select('variant_id, quantity, orders!inner(created_at)')
+                .select('variant_id, quantity, sku, orders!inner(created_at)')
                 .gte('orders.created_at', startDate)
                 .lte('orders.created_at', endDate)
 
             if (!orderError && lineItems) {
                 lineItems.forEach((item: any) => {
-                    const vid = item.variant_id
+                    let vid = item.variant_id
+
+                    // Apply SKU mapping if exists
+                    if (item.sku && skuMappingMap.has(item.sku)) {
+                        vid = skuMappingMap.get(item.sku)
+                    }
+
                     const qty = item.quantity || 0
                     if (vid) {
                         dateRangeOrderCounts[vid] = (dateRangeOrderCounts[vid] || 0) + qty
                     }
                 })
             }
+
         }
 
         // Calculate sold_since_update for tracked products

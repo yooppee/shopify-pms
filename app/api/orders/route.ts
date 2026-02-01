@@ -27,6 +27,7 @@ export async function GET() {
     try {
         const supabase = createServiceRoleClient()
 
+        // 1. Fetch Orders with Line Items
         const { data: orders, error } = await supabase
             .from('orders')
             .select(`
@@ -43,17 +44,36 @@ export async function GET() {
             )
         }
 
-        // Extract all variant IDs from line items
+        // 2. Fetch SKU Mappings
+        const { data: mappings } = await supabase
+            .from('sku_mappings')
+            .select('input_sku, target_variant_id')
+
+        const skuMappingMap = new Map<string, number>()
+        if (mappings) {
+            mappings.forEach((m: any) => {
+                if (m.input_sku && m.target_variant_id) {
+                    skuMappingMap.set(m.input_sku, Number(m.target_variant_id))
+                }
+            })
+        }
+
+        // 3. Collect all Variant IDs (Original + Mapped)
         const variantIds = new Set<number>()
         orders.forEach((order: any) => {
             order.order_line_items?.forEach((item: any) => {
+                // If there's a mapping, use that variant ID
+                if (item.sku && skuMappingMap.has(item.sku)) {
+                    variantIds.add(skuMappingMap.get(item.sku)!)
+                }
+                // Also add original variant_id as fallback/default
                 if (item.variant_id) {
                     variantIds.add(item.variant_id)
                 }
             })
         })
 
-        // Fetch product images and cost prices for these variants
+        // 4. Fetch Products (Images, Costs) for all collected variants
         const { data: products } = await supabase
             .from('products')
             .select('variant_id, image_url, internal_meta')
@@ -68,17 +88,27 @@ export async function GET() {
             })
         })
 
-        // Attach image_url and cost to line items and calculate order total cost
+        // 5. Enrich Line Items with Mapped/Original Data
         const enrichedOrders = orders.map((order: any) => {
             let totalOrderCost = 0
 
             const enrichedLineItems = order.order_line_items.map((item: any) => {
-                const productData = productMap.get(item.variant_id)
-                const inventoryCost = productData?.cost_price || 0
-                const manualCost = item.manual_cost // This comes from the DB directly
+                // Determine effective variant ID: Mapped -> Original
+                let effectiveVariantId = item.variant_id
+                let isMapped = false
 
-                // Determine final cost: manual overrides inventory
-                // But we want to preserve the info about whether it's manual
+                if (item.sku && skuMappingMap.has(item.sku)) {
+                    effectiveVariantId = skuMappingMap.get(item.sku)!
+                    isMapped = true
+                }
+
+                // Look up product data using the effective ID
+                const productData = productMap.get(effectiveVariantId)
+
+                const inventoryCost = productData?.cost_price || 0
+                const manualCost = item.manual_cost // DB manual override
+
+                // Final cost logic: Manual > Inventory
                 const finalCost = manualCost !== null ? manualCost : inventoryCost
 
                 const quantity = item.quantity || 0
@@ -86,9 +116,11 @@ export async function GET() {
 
                 return {
                     ...item,
-                    image_url: productData?.image_url || null,
+                    image_url: productData?.image_url || null, // Use mapped image
                     cost: finalCost,
-                    is_manual_cost: manualCost !== null
+                    is_manual_cost: manualCost !== null,
+                    effective_variant_id: effectiveVariantId, // Useful for frontend debugging/linking
+                    is_mapped: isMapped
                 }
             })
 
