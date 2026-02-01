@@ -27,6 +27,7 @@ export interface InternalMeta {
     notes?: string
     manual_inventory?: number // For manual inventory override
     inventory_updated_at?: string // Timestamp of last manual inventory update
+    inventory_remarks?: string // Remarks for the inventory item
     [key: string]: any // Allow custom fields
 }
 

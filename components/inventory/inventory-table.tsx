@@ -36,6 +36,7 @@ import {
 } from 'lucide-react'
 
 import { SalesLinkDialog } from './sales-link-dialog'
+import { RestoreVariantDialog } from './restore-variant-dialog'
 import { cn } from '@/lib/utils'
 import Image from 'next/image'
 import { Badge } from '@/components/ui/badge'
@@ -111,6 +112,31 @@ const InlineEditableStock = ({
     )
 }
 
+const InlineEditableRemarks = ({
+    initialValue,
+    onChange
+}: {
+    initialValue: string,
+    onChange: (v: string) => void
+}) => {
+    const [val, setVal] = useState(initialValue)
+    React.useEffect(() => { setVal(initialValue) }, [initialValue])
+
+    return (
+        <div className="flex px-2 w-full">
+            <input
+                className="w-full text-xs text-slate-600 bg-transparent border border-transparent hover:border-slate-200 focus:border-blue-400 focus:ring-2 focus:ring-blue-50/50 rounded px-2 py-1 transition-all outline-none placeholder:text-slate-300 truncate"
+                value={val || ''}
+                onChange={(e) => {
+                    setVal(e.target.value)
+                    onChange(e.target.value)
+                }}
+                placeholder="Add remark..."
+            />
+        </div>
+    )
+}
+
 
 interface InventoryTableProps {
     products: ProductWithCalculations[]
@@ -129,7 +155,7 @@ interface InventoryNode extends Partial<ProductWithCalculations> {
 
 export function InventoryTable({ products, allProducts, onRefresh }: InventoryTableProps) {
     const [expanded, setExpanded] = useState<ExpandedState>({})
-    const [pendingChanges, setPendingChanges] = useState<Map<number, { qty?: number, timestamp?: string, isManual?: boolean, title?: string, sku?: string }>>(new Map())
+    const [pendingChanges, setPendingChanges] = useState<Map<number, { qty?: number, timestamp?: string, isManual?: boolean, title?: string, sku?: string, remarks?: string }>>(new Map())
     const [isSaving, setIsSaving] = useState(false)
     const [deleteMode, setDeleteMode] = useState(false)
     const [pendingDeletions, setPendingDeletions] = useState<Set<string>>(new Set()) // Use "s-{id}" or "v-{id}"
@@ -141,6 +167,11 @@ export function InventoryTable({ products, allProducts, onRefresh }: InventoryTa
     // Sales Linking
     const [isSalesLinkDialogOpen, setIsSalesLinkDialogOpen] = useState(false)
     const [activeVariant, setActiveVariant] = useState<InventoryNode | null>(null)
+
+    // Restoration
+    const [isRestoreDialogOpen, setIsRestoreDialogOpen] = useState(false)
+    const [untrackedVariants, setUntrackedVariants] = useState<ProductWithCalculations[]>([])
+    const [activeSpuForRestore, setActiveSpuForRestore] = useState<InventoryNode | null>(null)
 
     const data = useMemo<InventoryNode[]>(() => {
         const grouped = new Map<number, { variants: any[], baseTitle: string, image_url: string | null }>()
@@ -221,7 +252,13 @@ export function InventoryTable({ products, allProducts, onRefresh }: InventoryTa
             }
         })
 
-        return inventoryNodes
+
+        // Sort nodes to ensure stable order regardless of update times
+        return inventoryNodes.sort((a, b) => {
+            const titleA = a.title || ''
+            const titleB = b.title || ''
+            return titleA.localeCompare(titleB) || (a.shopify_product_id! - b.shopify_product_id!)
+        })
     }, [products])
 
     const handleInventoryChange = (variantId: number, value: string) => {
@@ -265,7 +302,8 @@ export function InventoryTable({ products, allProducts, onRefresh }: InventoryTa
                     ...(product?.internal_meta || {}),
                     ...(change.qty !== undefined ? { manual_inventory: change.qty } : {}),
                     inventory_updated_at: change.timestamp || product?.internal_meta?.inventory_updated_at || new Date().toISOString(),
-                    is_manual_timestamp: change.isManual ?? product?.internal_meta?.is_manual_timestamp ?? false
+                    is_manual_timestamp: change.isManual ?? product?.internal_meta?.is_manual_timestamp ?? false,
+                    inventory_remarks: change.remarks !== undefined ? change.remarks : product?.internal_meta?.inventory_remarks
                 }
 
                 const updatePayload: any = { internal_meta: updatedMeta }
@@ -290,6 +328,23 @@ export function InventoryTable({ products, allProducts, onRefresh }: InventoryTa
     }
 
     const handleAddSku = async (spu: InventoryNode) => {
+        // First check for untracked variants for this SPU
+        const untracked = allProducts.filter(p =>
+            p.shopify_product_id === spu.shopify_product_id &&
+            !p.internal_meta?.is_tracked_inventory
+        )
+
+        if (untracked.length > 0) {
+            setUntrackedVariants(untracked)
+            setActiveSpuForRestore(spu)
+            setIsRestoreDialogOpen(true)
+            return
+        }
+
+        await createCustomSku(spu)
+    }
+
+    const createCustomSku = async (spu: InventoryNode) => {
         setIsSaving(true)
         try {
             toast.loading('Creating custom variant...', { id: 'add-sku' })
@@ -336,6 +391,44 @@ export function InventoryTable({ products, allProducts, onRefresh }: InventoryTa
             toast.error(`Error: ${error.message}`, { id: 'add-sku' })
         } finally {
             setIsSaving(false)
+        }
+    }
+
+    const handleRestoreVariants = async (variantIds: number[]) => {
+        if (!activeSpuForRestore) return
+
+        setIsSaving(true)
+        try {
+            toast.loading(`Restoring ${variantIds.length} variants...`, { id: 'restore' })
+
+            const updates = variantIds.map(async (vid) => {
+                const product = allProducts.find(p => p.variant_id === vid)
+                const updatedMeta = {
+                    ...(product?.internal_meta || {}),
+                    is_tracked_inventory: true,
+                    // Reset/Init tracking data if needed
+                    manual_inventory: product?.internal_meta?.manual_inventory || 0,
+                    inventory_updated_at: new Date().toISOString()
+                }
+
+                return supabaseUntyped
+                    .from('products')
+                    .update({ internal_meta: updatedMeta })
+                    .eq('variant_id', vid)
+            })
+
+            await Promise.all(updates)
+
+            toast.success('Variants restored to tracking', { id: 'restore' })
+            onRefresh?.()
+
+            // Automatically expand the SPU
+            setExpanded(prev => ({ ...(prev as Record<string, boolean>), [activeSpuForRestore.shopify_product_id!]: true }))
+        } catch (error: any) {
+            toast.error(`Failed to restore: ${error.message}`, { id: 'restore' })
+        } finally {
+            setIsSaving(false)
+            setActiveSpuForRestore(null)
         }
     }
 
@@ -798,38 +891,59 @@ export function InventoryTable({ products, allProducts, onRefresh }: InventoryTa
                                     >
                                         <Calendar className="h-3 w-3" />
                                         {format(date, 'MMM d, HH:mm')}
-                                        {isManual && <div className="h-1 w-1 rounded-full bg-amber-500" />}
-                                        {pending?.timestamp && (
-                                            <div className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-blue-500 border-2 border-white" />
-                                        )}
                                     </Button>
                                 </PopoverTrigger>
-                                <PopoverContent className="w-auto p-0" align="end">
-                                    <div className="p-3 border-b flex items-center justify-between">
-                                        <span className="text-xs font-bold">Adjust Timestamp</span>
-                                        <Clock className="h-3 w-3 text-slate-400" />
+                                <PopoverContent className="w-auto p-2" align="center">
+                                    <div className="text-xs text-slate-500 font-medium whitespace-nowrap">
+                                        Last counted: <span className="text-slate-900">{format(date, 'PPpp')}</span>
                                     </div>
-                                    <CalendarPicker
-                                        mode="single"
-                                        selected={date}
-                                        onSelect={(d) => meta.handleTimestampChange(vId, d)}
-                                        initialFocus
-                                    />
-                                    <div className="p-2 border-t bg-slate-50">
-                                        <p className="text-[10px] text-slate-500 text-center">
-                                            {isManual ? 'Manual override active.' : 'Sales after this time will be subtracted.'}
-                                        </p>
+                                    <div className="mt-2 pt-2 border-t border-slate-100 flex justify-end">
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className="h-6 text-[10px] text-red-500 hover:text-red-600 hover:bg-red-50"
+                                            onClick={(e) => {
+                                                e.stopPropagation()
+                                                handleTimestampChange(vId, undefined) // Reset to auto
+                                            }}
+                                        >
+                                            Reset to Auto
+                                        </Button>
                                     </div>
                                 </PopoverContent>
                             </Popover>
                         </div>
                     )
                 },
+            },
+            {
+                id: 'remarks',
+                header: 'Remarks',
+                size: 200,
+                cell: ({ row, table }) => {
+                    if (row.original.is_spu && row.original.variant_count! > 1) return null
+
+                    const vId = row.original.variant_id!
+                    const meta = table.options.meta as any
+                    const pending = meta.pendingChanges.get(vId)
+
+                    const val = pending?.remarks !== undefined
+                        ? pending.remarks
+                        : (row.original.internal_meta?.inventory_remarks ?? '')
+
+                    return (
+                        <InlineEditableRemarks
+                            initialValue={val}
+                            onChange={(v) => handleFieldChange(vId, 'remarks', v)}
+                        />
+                    )
+                }
             }
         )
 
         return baseColumns
-    }, [deleteMode, pendingDeletions]) // REMOVED pendingChanges from deps to keep column stability 突破
+    }, [deleteMode, pendingDeletions, products])
+
 
     const table = useReactTable({
         data,
@@ -1020,6 +1134,14 @@ export function InventoryTable({ products, allProducts, onRefresh }: InventoryTa
                 } : null}
                 allProducts={allProducts}
                 onSave={handleSaveLinks}
+            />
+
+            <RestoreVariantDialog
+                open={isRestoreDialogOpen}
+                onOpenChange={setIsRestoreDialogOpen}
+                untrackedVariants={untrackedVariants}
+                onRestore={handleRestoreVariants}
+                onCreateNew={() => activeSpuForRestore && createCustomSku(activeSpuForRestore)}
             />
         </div>
     )
