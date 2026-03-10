@@ -112,6 +112,7 @@ export function GenericExpenseTable({ data: initialData, onDataChange, onSave, i
     const [selectedForGroup, setSelectedForGroup] = React.useState<Set<string>>(new Set())
     const [isSettlementMode, setIsSettlementMode] = React.useState(false)
     const [selectedForSettlement, setSelectedForSettlement] = React.useState<Set<string>>(new Set())
+    const lastSettlementClickedIndex = React.useRef<number | null>(null)
     const [expanded, setExpanded] = React.useState<ExpandedState>({})
 
     const [searchTerm, setSearchTerm] = React.useState('')
@@ -398,14 +399,38 @@ export function GenericExpenseTable({ data: initialData, onDataChange, onSave, i
         }
     }
 
-    const handleSettlementToggle = (id: string) => {
-        const newSelected = new Set(selectedForSettlement)
-        if (newSelected.has(id)) {
-            newSelected.delete(id)
+    // Get flat list of settlement-eligible rows (non-group, non-transferred)
+    const settlementEligibleRows = React.useMemo(() => {
+        return flattenExpenses(filteredData).filter(r => !r.isGroup && !r.isTransferred)
+    }, [filteredData])
+
+    const handleSettlementToggle = (id: string, event?: React.MouseEvent) => {
+        const currentIndex = settlementEligibleRows.findIndex(r => r.id === id)
+
+        if (event?.shiftKey && lastSettlementClickedIndex.current !== null && currentIndex !== -1) {
+            // Shift+Click: select range between last clicked and current
+            const start = Math.min(lastSettlementClickedIndex.current, currentIndex)
+            const end = Math.max(lastSettlementClickedIndex.current, currentIndex)
+            const newSelected = new Set(selectedForSettlement)
+            for (let i = start; i <= end; i++) {
+                newSelected.add(settlementEligibleRows[i].id)
+            }
+            setSelectedForSettlement(newSelected)
         } else {
-            newSelected.add(id)
+            // Normal click: toggle single row
+            const newSelected = new Set(selectedForSettlement)
+            if (newSelected.has(id)) {
+                newSelected.delete(id)
+            } else {
+                newSelected.add(id)
+            }
+            setSelectedForSettlement(newSelected)
         }
-        setSelectedForSettlement(newSelected)
+
+        // Always update last clicked index
+        if (currentIndex !== -1) {
+            lastSettlementClickedIndex.current = currentIndex
+        }
     }
 
     const handleSettlementSelectAllToggle = (checked: boolean) => {
@@ -468,13 +493,44 @@ export function GenericExpenseTable({ data: initialData, onDataChange, onSave, i
                 )
             },
             cell: ({ row }) => {
-                if (row.original.isGroup || row.original.isTransferred) return null
+                if (row.original.isTransferred) return null
+
+                // Group row: show checkbox that toggles all children
+                if (row.original.isGroup) {
+                    const childRows = flattenExpenses(row.original.children || []).filter(r => !r.isGroup && !r.isTransferred)
+                    if (childRows.length === 0) return null
+
+                    const selectedCount = childRows.filter(r => selectedForSettlement.has(r.id)).length
+                    const allSelected = selectedCount === childRows.length
+                    const someSelected = selectedCount > 0 && !allSelected
+
+                    return (
+                        <div className="flex items-center justify-center">
+                            <Checkbox
+                                checked={allSelected ? true : someSelected ? "indeterminate" : false}
+                                onCheckedChange={(checked) => {
+                                    const newSelected = new Set(selectedForSettlement)
+                                    if (checked) {
+                                        childRows.forEach(r => newSelected.add(r.id))
+                                    } else {
+                                        childRows.forEach(r => newSelected.delete(r.id))
+                                    }
+                                    setSelectedForSettlement(newSelected)
+                                }}
+                                aria-label="Select group for settlement"
+                            />
+                        </div>
+                    )
+                }
 
                 return (
                     <div className="flex items-center justify-center">
                         <Checkbox
                             checked={selectedForSettlement.has(row.original.id)}
-                            onCheckedChange={() => handleSettlementToggle(row.original.id)}
+                            onClick={(e: React.MouseEvent) => {
+                                e.preventDefault()
+                                handleSettlementToggle(row.original.id, e)
+                            }}
                             aria-label="Select row for settlement"
                         />
                     </div>

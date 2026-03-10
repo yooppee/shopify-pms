@@ -32,7 +32,10 @@ import {
     Link,
     PlusCircle,
     Loader2,
-    AlertTriangle
+    AlertTriangle,
+    Search,
+    DollarSign,
+    Package
 } from 'lucide-react'
 
 import { SalesLinkDialog } from './sales-link-dialog'
@@ -138,6 +141,91 @@ const InlineEditableRemarks = ({
 }
 
 
+const InlineEditableCost = ({
+    initialValue,
+    fallbackValue,
+    isOverride,
+    onChange
+}: {
+    initialValue: number | null | undefined,
+    fallbackValue: number | null | undefined,
+    isOverride: boolean,
+    onChange: (v: number | null) => void
+}) => {
+    const displayValue = isOverride ? initialValue : fallbackValue
+    const [isEditing, setIsEditing] = useState(false)
+    const [editVal, setEditVal] = useState('')
+
+    const handleStartEdit = () => {
+        setEditVal(isOverride && initialValue != null ? initialValue.toString() : '')
+        setIsEditing(true)
+    }
+
+    const handleCommit = () => {
+        setIsEditing(false)
+        const trimmed = editVal.trim()
+        if (trimmed === '') {
+            // Clear override, fall back to Product Management cost
+            onChange(null)
+        } else {
+            const num = parseFloat(trimmed)
+            if (!isNaN(num)) {
+                onChange(num)
+            }
+        }
+    }
+
+    if (isEditing) {
+        return (
+            <div className="flex justify-center">
+                <input
+                    type="text"
+                    autoFocus
+                    className="h-7 w-20 text-center font-mono text-xs border border-blue-400 rounded focus:ring-2 focus:ring-blue-200 outline-none bg-white px-1"
+                    value={editVal}
+                    onChange={(e) => setEditVal(e.target.value)}
+                    onBlur={handleCommit}
+                    onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleCommit()
+                        if (e.key === 'Escape') setIsEditing(false)
+                    }}
+                    placeholder={fallbackValue != null ? fallbackValue.toFixed(2) : '0.00'}
+                />
+            </div>
+        )
+    }
+
+    if (displayValue === undefined || displayValue === null) {
+        return (
+            <div
+                className="flex justify-center text-slate-300 text-[10px] italic cursor-pointer hover:text-blue-400 transition-colors"
+                onClick={handleStartEdit}
+            >
+                not set
+            </div>
+        )
+    }
+
+    return (
+        <div
+            className="flex justify-center cursor-pointer group/cost"
+            onClick={handleStartEdit}
+        >
+            <span className={cn(
+                "font-mono text-xs font-medium transition-colors",
+                isOverride ? "text-blue-600" : "text-amber-700",
+                "group-hover/cost:text-blue-500"
+            )}>
+                ${Number(displayValue).toFixed(2)}
+            </span>
+            {isOverride && (
+                <span className="ml-1 text-[8px] text-blue-400 font-bold uppercase tracking-wider self-center">OVR</span>
+            )}
+        </div>
+    )
+}
+
+
 interface InventoryTableProps {
     products: ProductWithCalculations[]
     allProducts: ProductWithCalculations[]
@@ -155,12 +243,13 @@ interface InventoryNode extends Partial<ProductWithCalculations> {
 
 export function InventoryTable({ products, allProducts, onRefresh }: InventoryTableProps) {
     const [expanded, setExpanded] = useState<ExpandedState>({})
-    const [pendingChanges, setPendingChanges] = useState<Map<number, { qty?: number, timestamp?: string, isManual?: boolean, title?: string, sku?: string, remarks?: string }>>(new Map())
+    const [pendingChanges, setPendingChanges] = useState<Map<number, { qty?: number, timestamp?: string, isManual?: boolean, title?: string, sku?: string, remarks?: string, costOverride?: number | null }>>(new Map())
     const [isSaving, setIsSaving] = useState(false)
     const [deleteMode, setDeleteMode] = useState(false)
     const [pendingDeletions, setPendingDeletions] = useState<Set<string>>(new Set()) // Use "s-{id}" or "v-{id}"
     const [optimisticRemovedIds, setOptimisticRemovedIds] = useState<Set<string>>(new Set())
     const [showUntrackConfirm, setShowUntrackConfirm] = useState(false)
+    const [searchTerm, setSearchTerm] = useState('')
 
 
 
@@ -261,6 +350,77 @@ export function InventoryTable({ products, allProducts, onRefresh }: InventoryTa
         })
     }, [products])
 
+    // Filter data by search term
+    const filteredData = useMemo(() => {
+        if (!searchTerm.trim()) return data
+        const lowerTerm = searchTerm.toLowerCase()
+        return data.filter(node => {
+            // Match on SPU title
+            if (node.title?.toLowerCase().includes(lowerTerm)) return true
+            // Match on SKU
+            if (node.sku?.toLowerCase().includes(lowerTerm)) return true
+            // Match on child variant titles/SKUs
+            if (node.subRows?.some(sub =>
+                sub.title?.toLowerCase().includes(lowerTerm) ||
+                sub.sku?.toLowerCase().includes(lowerTerm)
+            )) return true
+            return false
+        })
+    }, [data, searchTerm])
+
+    // Helper to get effective cost for a variant (override > fallback)
+    const getEffectiveCost = (node: InventoryNode): number => {
+        const vId = node.variant_id!
+        const pending = pendingChanges.get(vId)
+        // Check pending override first
+        if (pending?.costOverride !== undefined) {
+            return pending.costOverride ?? node.internal_meta?.cost_price ?? 0
+        }
+        // Then check saved override
+        if (node.internal_meta?.inventory_cost_override != null) {
+            return node.internal_meta.inventory_cost_override
+        }
+        // Fall back to Product Management cost_price
+        return node.internal_meta?.cost_price ?? 0
+    }
+
+    // Dashboard stats for displayed data
+    const dashboardStats = useMemo(() => {
+        let totalQty = 0
+        let totalCost = 0
+
+        filteredData.forEach(node => {
+            if (node.variant_count === 1 || !node.subRows?.length) {
+                // Single variant SPU
+                const vId = node.variant_id!
+                const pending = pendingChanges.get(vId)
+                const initial = (pending?.qty !== undefined
+                    ? pending.qty
+                    : (node.internal_meta?.manual_inventory ?? node.inventory_quantity)) ?? 0
+                const sold = node.sold_since_update || 0
+                const onHand = initial - sold
+                const costPrice = getEffectiveCost(node)
+                totalQty += onHand
+                totalCost += onHand * costPrice
+            } else {
+                // Multi-variant SPU
+                (node.subRows || []).forEach(v => {
+                    const pending = pendingChanges.get(v.variant_id!)
+                    const initial = (pending?.qty !== undefined
+                        ? pending.qty
+                        : (v.internal_meta?.manual_inventory ?? v.inventory_quantity)) ?? 0
+                    const sold = v.sold_since_update || 0
+                    const onHand = initial - sold
+                    const costPrice = getEffectiveCost(v)
+                    totalQty += onHand
+                    totalCost += onHand * costPrice
+                })
+            }
+        })
+
+        return { totalQty, totalCost }
+    }, [filteredData, pendingChanges])
+
     const handleInventoryChange = (variantId: number, value: string) => {
         const numValue = value === '' ? 0 : parseInt(value)
         if (isNaN(numValue)) return
@@ -303,7 +463,8 @@ export function InventoryTable({ products, allProducts, onRefresh }: InventoryTa
                     ...(change.qty !== undefined ? { manual_inventory: change.qty } : {}),
                     inventory_updated_at: change.timestamp || product?.internal_meta?.inventory_updated_at || new Date().toISOString(),
                     is_manual_timestamp: change.isManual ?? product?.internal_meta?.is_manual_timestamp ?? false,
-                    inventory_remarks: change.remarks !== undefined ? change.remarks : product?.internal_meta?.inventory_remarks
+                    inventory_remarks: change.remarks !== undefined ? change.remarks : product?.internal_meta?.inventory_remarks,
+                    ...(change.costOverride !== undefined ? { inventory_cost_override: change.costOverride } : {})
                 }
 
                 const updatePayload: any = { internal_meta: updatedMeta }
@@ -859,6 +1020,64 @@ export function InventoryTable({ products, allProducts, onRefresh }: InventoryTa
                 },
             },
             {
+                id: 'cost',
+                header: 'Unit Cost',
+                size: 110,
+                cell: ({ row, table }) => {
+                    const meta = table.options.meta as any
+
+                    if (row.original.is_spu && row.original.variant_count! > 1) {
+                        // Sum total cost for all variants (using effective cost)
+                        const totalCost = (row.original.subRows || []).reduce((sum, v) => {
+                            const pending = meta.pendingChanges.get(v.variant_id!)
+                            const initial = (pending?.qty !== undefined
+                                ? pending.qty
+                                : (v.internal_meta?.manual_inventory ?? v.inventory_quantity)) ?? 0
+                            const sold = v.sold_since_update || 0
+                            const onHand = initial - sold
+                            const costPrice = meta.getEffectiveCost(v)
+                            return sum + (onHand * costPrice)
+                        }, 0)
+                        return (
+                            <div className="flex justify-center">
+                                <span className="font-mono font-bold text-amber-700 text-xs">${totalCost.toFixed(2)}</span>
+                            </div>
+                        )
+                    }
+
+                    // For single-variant SPU or variant rows
+                    const vId = row.original.variant_id!
+                    const pending = meta.pendingChanges.get(vId)
+                    const savedOverride = row.original.internal_meta?.inventory_cost_override
+                    const fallbackCost = row.original.internal_meta?.cost_price ?? null
+
+                    // Determine what to show
+                    let currentValue: number | null | undefined
+                    let isOverride = false
+
+                    if (pending?.costOverride !== undefined) {
+                        // Pending change exists
+                        currentValue = pending.costOverride
+                        isOverride = pending.costOverride !== null
+                    } else if (savedOverride != null) {
+                        currentValue = savedOverride
+                        isOverride = true
+                    } else {
+                        currentValue = fallbackCost
+                        isOverride = false
+                    }
+
+                    return (
+                        <InlineEditableCost
+                            initialValue={isOverride ? currentValue : null}
+                            fallbackValue={fallbackCost}
+                            isOverride={isOverride}
+                            onChange={(v) => handleFieldChange(vId, 'costOverride', v)}
+                        />
+                    )
+                },
+            },
+            {
                 id: 'last_counted',
                 header: 'Last Counted',
                 size: 140,
@@ -946,7 +1165,7 @@ export function InventoryTable({ products, allProducts, onRefresh }: InventoryTa
 
 
     const table = useReactTable({
-        data,
+        data: filteredData,
         columns,
         state: { expanded },
         onExpandedChange: setExpanded,
@@ -956,18 +1175,50 @@ export function InventoryTable({ products, allProducts, onRefresh }: InventoryTa
         meta: {
             pendingChanges,
             handleFieldChange,
-            handleTimestampChange
+            handleTimestampChange,
+            getEffectiveCost
         }
     })
 
     return (
         <div className="flex flex-col">
-            {/* Table Header Controls */}
+            {/* Toolbar: Search, Dashboard, Controls */}
             <div className="p-4 border-b flex items-center justify-between bg-white">
                 <div className="flex items-center gap-4">
-                    <div className="text-sm">
-                        <span className="text-slate-400">Recording</span>
-                        <span className="mx-2 font-bold text-slate-900">{data.length} SPUs</span>
+                    {/* Search Box */}
+                    <div className="relative flex-shrink-0">
+                        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
+                        <Input
+                            placeholder="Search products..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            className="pl-9 w-[220px] h-9 bg-slate-50 border-slate-200 focus:bg-white"
+                        />
+                    </div>
+
+                    {/* Mini Dashboard */}
+                    <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200">
+                            <Package className="h-3.5 w-3.5 text-blue-500" />
+                            <div className="flex flex-col">
+                                <span className="text-[9px] text-slate-400 uppercase font-bold tracking-wider leading-none">Total Qty</span>
+                                <span className="text-sm font-bold font-mono text-slate-800 tabular-nums leading-tight">{dashboardStats.totalQty.toLocaleString()}</span>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-2 bg-amber-50 px-3 py-1.5 rounded-lg border border-amber-200">
+                            <DollarSign className="h-3.5 w-3.5 text-amber-600" />
+                            <div className="flex flex-col">
+                                <span className="text-[9px] text-amber-500 uppercase font-bold tracking-wider leading-none">Total Cost</span>
+                                <span className="text-sm font-bold font-mono text-amber-800 tabular-nums leading-tight">${dashboardStats.totalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="text-sm text-slate-400">
+                        Showing
+                        <span className="mx-1.5 font-bold text-slate-900">{filteredData.length}</span>
+                        {searchTerm && <span>of {data.length}</span>}
+                        <span className="ml-0.5">SPUs</span>
                     </div>
                 </div>
 
